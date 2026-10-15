@@ -148,7 +148,8 @@ punctuation mark (any symbol such as `. , ? !`, not digits) then doesn't end the
 the underline too. While underlined it is the word being typed: a language switch key changes it
 (`dkssud.` → `안녕.`, the mark stays as typed), Delete deletes (the space or mark first), and
 starting the next word puts it in with that character. Only one character is held: after `안녕.` a
-Space or a second mark ends the word and goes to the app. Return only confirms it, as on any
+Space or a second mark ends the word and is handled as with holding off (to the app, usually; after
+a word that went in as Japanese, by the rules for symbols after Japanese text). Return only confirms it, as on any
 underlined word, so press it again for a new line or to run a command; the app never gets the Space
 key, so its text replacements don't fire.
 

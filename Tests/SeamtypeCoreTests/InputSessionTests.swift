@@ -14,6 +14,8 @@ final class FakeTextField: TextClient {
     var cursor = 0
     /// Simulates apps that don't support reading back their text.
     var readable = true
+    /// Every text the input method inserted, in order: a held word must go in with its boundary in one.
+    var insertions: [String] = []
 
     func setMarkedText(_ s: String) {
         let ns = text as NSString
@@ -34,6 +36,7 @@ final class FakeTextField: TextClient {
     }
 
     func insertText(_ s: String, replacing range: NSRange?) {
+        insertions.append(s)
         let target = range ?? (marked.location != NSNotFound ? marked : NSRange(location: cursor, length: 0))
         text = (text as NSString).replacingCharacters(in: target, with: s)
         marked = NSRange(location: NSNotFound, length: 0)

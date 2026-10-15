@@ -31,10 +31,11 @@ public struct AppPolicy: Codable, Equatable, Sendable {
     /// The keys that switch the word's language here; the others go to the app. (Inside a vim
     /// that reports its modes, Esc is vim's whatever this says.)
     public var switchKeys: Set<SwitchKey>
-    /// Space doesn't end the word but puts the space inside the underline too. Held there, it is
-    /// still the word being typed: a switch key changes it, Delete deletes (the space first), and
-    /// the next word puts it in with its space. For terminals, which can't hand a committed word
-    /// back for a change. The app then never sees the Space key, so its text replacements don't fire.
+    /// Space or a symbol doesn't end the word but goes inside the underline too. Held there, it is
+    /// still the word being typed: a switch key changes it, Delete deletes (the boundary first), and
+    /// the next word puts it in with that character. For terminals, which can't hand a committed
+    /// word back for a change. The app then never sees the Space key, so its text replacements
+    /// don't fire. (Named for the Space it started with; the key stays for existing `apps.json`.)
     public var holdSpace: Bool
     /// Full-width digits and spaces after Japanese (when turned on in the settings) apply here;
     /// false keeps them half-width in this app (a terminal, a code editor).

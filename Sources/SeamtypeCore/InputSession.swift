@@ -27,8 +27,8 @@ public protocol TextClient: AnyObject {
 ///                  else the last keystroke. The word keeps its language until the next letter.
 ///   Space          English/Korean: commit, then a space. Japanese: convert to kanji
 ///                  (`AppPolicy.holdSpace`: the space goes inside the underline instead, and the
-///                  word stays the word being typed until the next one starts; a symbol below
-///                  is held the same way, and Space on a word held with one commits it)
+///                  word stays the word being typed until the next one starts; a symbol is held
+///                  the same way, and Space on a word held with a symbol commits it)
 ///                  (with `fullWidthSpace`, a space after Japanese text is full-width; ⇧Space
 ///                  types the other width)
 ///   0–9            with `fullWidthDigits`, after Japanese text or inside a phrase they are part
@@ -36,8 +36,8 @@ public protocol TextClient: AnyObject {
 ///                  Otherwise the app types them; a switch key right after digits or symbols it
 ///                  typed makes them Japanese (123 → １２３, [ → 「), and in Japanese text a romaji
 ///                  word straight after a number is a counter, converted with it (3ji → 3時)
-///   , . ? ! - '    inside a Japanese phrase they are part of it (、。？！ー); otherwise
-///   and symbols    they commit the word, then type the key (`holdSpace`: held like Space)
+///   symbols        , . ? ! - ' inside a Japanese phrase are part of it (、。？！ー); otherwise
+///                  a symbol commits the word, then types the key (`holdSpace`: held like Space)
 ///   Return         commit the word as shown, and nothing else (the next Return is the app's);
 ///                  with `returnConfirmsOnly` off the app gets it too, except after Japanese
 ///   anything else  commit and let the app handle the key

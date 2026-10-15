@@ -12,13 +12,13 @@ being typed.
 _Avoid_: token (except in engine scoring), composition
 
 **Boundary** (경계 글자):
-The single Space or ASCII symbol that ends a word and goes into the text with it. Digits are not
-boundaries.
+The single Space, ASCII symbol or digit that ends a word and goes into the text with it.
 _Avoid_: delimiter, separator, terminator
 
 **Held word** (잡아 둔 단어):
 A word kept underlined together with its boundary, still treated as the word being typed, in an
-app set to hold words. A switch key changes it and Delete takes back only the boundary.
+app set to hold words. Only a Space or a symbol is held, never a digit. A switch key changes the
+word and Delete takes back only the boundary.
 _Avoid_: pending word, suspended word
 
 **Switch key** (언어 바꾸기 키):
