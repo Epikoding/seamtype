@@ -27,7 +27,8 @@ public protocol TextClient: AnyObject {
 ///                  else the last keystroke. The word keeps its language until the next letter.
 ///   Space          English/Korean: commit, then a space. Japanese: convert to kanji
 ///                  (`AppPolicy.holdSpace`: the space goes inside the underline instead, and the
-///                  word stays the word being typed until the next one starts)
+///                  word stays the word being typed until the next one starts; a symbol below
+///                  is held the same way, and Space on a word held with one commits it)
 ///                  (with `fullWidthSpace`, a space after Japanese text is full-width; ⇧Space
 ///                  types the other width)
 ///   0–9            with `fullWidthDigits`, after Japanese text or inside a phrase they are part
@@ -36,7 +37,7 @@ public protocol TextClient: AnyObject {
 ///                  typed makes them Japanese (123 → １２３, [ → 「), and in Japanese text a romaji
 ///                  word straight after a number is a counter, converted with it (3ji → 3時)
 ///   , . ? ! - '    inside a Japanese phrase they are part of it (、。？！ー); otherwise
-///                  they commit the word, then type the key
+///   and symbols    they commit the word, then type the key (`holdSpace`: held like Space)
 ///   Return         commit the word as shown, and nothing else (the next Return is the app's);
 ///                  with `returnConfirmsOnly` off the app gets it too, except after Japanese
 ///   anything else  commit and let the app handle the key
@@ -143,11 +144,12 @@ public final class InputSession {
         didSet { if previousLanguage == nil { openBrackets.removeAll() } } // a new context
     }
     private var lastCommit: Committed?
-    /// The word was ended with Space in an app set to hold it (`AppPolicy.holdSpace`): it stays
-    /// composed, shown with its space, until the next word starts or another key finishes it. A
-    /// switch key still cycles it and Delete takes back only the space. Terminals can't give a finished word
-    /// back (Ghostty reports its mouse selection as the caret), so this keeps the word on hand.
-    private var heldSpace = false
+    /// The boundary (Space or a symbol) the word was ended with in an app set to hold it
+    /// (`AppPolicy.holdSpace`): the word stays composed, shown with that character, until the next
+    /// word starts or another key finishes it. A switch key still cycles it and Delete takes back
+    /// only the boundary. Terminals can't give a finished word back (Ghostty reports its mouse
+    /// selection as the caret), so this keeps the word on hand.
+    private var heldBoundary: Character?
     /// The mode vim last reported (`vimChanged`), nil when no vim is reporting. In normal mode
     /// every key goes straight through; while vim reports at all, Esc is vim's.
     private var vimMode: VimSignal?
@@ -285,7 +287,7 @@ public final class InputSession {
 
         switch key {
         case .letter(let ch):
-            if heldSpace { commit(client: client) } // the held word goes in with its space; a new word starts
+            if heldBoundary != nil { commit(client: client) } // the held word goes in with its boundary; a new word starts
             // A symbol on its own is confirmed by the next word, which is judged by itself.
             if !keys.isEmpty, keys.allSatisfy({ RomajiComposer.symbols[$0] != nil }) { commit(client: client) }
             if keys.isEmpty { // a new word
@@ -303,9 +305,9 @@ public final class InputSession {
             return true
 
         case .delete:
-            if heldSpace {
-                // Only the space comes back; the word is still there to be changed.
-                heldSpace = false
+            if heldBoundary != nil {
+                // Only the boundary comes back; the word is still there to be changed.
+                heldBoundary = nil
                 updatePreview(client)
                 return true
             }
@@ -348,15 +350,16 @@ public final class InputSession {
             return true
 
         case .printable(let ch):
-            if heldSpace {
+            if let held = heldBoundary {
                 // A held word is still the word being typed: Space on it in Japanese (after a switch)
-                // converts, as it would have before; the held space was never a Japanese one.
-                if ch == " ", currentLanguage() == .japanese, converter != nil {
-                    heldSpace = false
+                // converts, as it would have before; the held space was never a Japanese one. A held
+                // symbol ended the word for good: Space then commits it, no conversion.
+                if ch == " ", held == " ", currentLanguage() == .japanese, converter != nil {
+                    heldBoundary = nil
                     startConversion(client)
                     return true
                 }
-                commit(client: client) // the held word goes in with its space; the key follows as after any commit
+                commit(client: client) // the held word goes in with its boundary; the key follows as after any commit
             }
             if keys.isEmpty {
                 defer { afterDigit = ch.isNumber }
@@ -397,14 +400,14 @@ public final class InputSession {
                 startSymbol(String(ch), client)
                 return true
             }
-            if ch == " ", policy.holdSpace {
-                // The word stays underlined with its space, shown as it would be committed (the
+            if policy.holdSpace, ch == " " || Self.isBoundarySymbol(ch) {
+                // The word stays underlined with its boundary, shown as it would be committed (the
                 // whole word's decision, not the last keystroke's preview), so a switch key still
-                // changes it and Delete takes back the space. The next word commits both (see `heldSpace`).
+                // changes it and Delete takes back the boundary. The next word commits both (see `heldBoundary`).
                 let language = currentLanguage()
                 if language != .japanese {
                     if forced == nil { pinned = language }
-                    heldSpace = true
+                    heldBoundary = ch
                     updatePreview(client)
                     return true
                 }
@@ -434,7 +437,7 @@ public final class InputSession {
 
         case .katakana, .hiragana:
             // Only for a Japanese phrase; otherwise ⌃K/⌃J stay the app's shortcuts.
-            if heldSpace { commit(client: client); return false } // a held word is done: the shortcut is the app's
+            if heldBoundary != nil { commit(client: client); return false } // a held word is done: the shortcut is the app's
             guard !keys.isEmpty, japaneseEnabled, forced == .japanese || previewLanguage == .japanese else {
                 commit(client: client)
                 return false
@@ -464,11 +467,11 @@ public final class InputSession {
             previousLanguage = .japanese
             return
         }
-        guard !keys.isEmpty else { heldSpace = false; return }
-        let space = heldSpace ? " " : "" // a word held after Space goes in with it
-        heldSpace = false
+        guard !keys.isEmpty else { heldBoundary = nil; return }
+        let boundary = heldBoundary.map(String.init) ?? "" // a held word goes in with its space or symbol
+        heldBoundary = nil
         let word = finishWord()
-        client?.insertText(word.text + space, replacing: nil)
+        client?.insertText(word.text + boundary, replacing: nil)
     }
 
     /// Commits what's in progress after the caret was moved elsewhere (a click; the app asks):
@@ -977,7 +980,7 @@ public final class InputSession {
 
     private func updatePreview(_ client: TextClient) {
         if keys.isEmpty {
-            heldSpace = false
+            heldBoundary = nil
             previewLanguage = nil
             enginePreview = nil
             client.setMarkedText("")
@@ -1001,9 +1004,16 @@ public final class InputSession {
         }
     }
 
-    /// The word being composed as the marked text, with its space while it is held after Space.
+    /// The word being composed as the marked text, with its boundary while it is held.
     private func show(_ text: String, _ client: TextClient) {
-        client.setMarkedText(heldSpace ? text + " " : text)
+        client.setMarkedText(heldBoundary.map { text + String($0) } ?? text)
+    }
+
+    /// An ASCII symbol that ends a word and is held with it in a `holdSpace` app: anything the
+    /// input method types after a word except Space (held on its own terms) and digits (which
+    /// commit the word and go to the app, as they do with holding off).
+    static func isBoundarySymbol(_ ch: Character) -> Bool {
+        ch.isASCII && ch != " " && !ch.isLetter && !ch.isNumber
     }
 
     private static let koreanModel = KoreanModel()

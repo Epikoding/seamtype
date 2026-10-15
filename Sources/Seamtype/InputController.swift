@@ -334,7 +334,7 @@ final class InputController: IMKInputController {
                     on: policy.conversionThreshold >= AppPolicy.strictThreshold, enabled: policy.enabled, indent: 2, value: app)
                 add(L("Esc Switches Language"), #selector(toggleEscapeSwitches(_:)), on: policy.switchKeys.contains(.escape),
                     enabled: policy.enabled, indent: 2, value: app)
-                add(L("Hold the Word After Space"), #selector(toggleHoldSpace(_:)), on: policy.holdSpace,
+                add(L("Hold the Word After Space or Punctuation"), #selector(toggleHoldSpace(_:)), on: policy.holdSpace,
                     enabled: policy.enabled, indent: 2, value: app)
                 if listed {
                     add(L("Use Default Settings in This App"), #selector(removeAppEntry(_:)), indent: 1, value: app)

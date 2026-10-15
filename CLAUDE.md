@@ -100,12 +100,14 @@ tests use `FakeTextField`). It owns the preview and hysteresis, commits, Esc rea
   false, so the app types the key itself, as the system Korean IME does. Inserting "word + space"
   left a stray character in Ghostty. Test harnesses must insert the passed-on key themselves.
 - In an app set to `holdSpace` (per app only: the Apps pane offers no default for it, since in `"*"`
-  it would turn off text replacements everywhere), Space doesn't commit: the word stays composed
-  with `heldSpace` set and is shown with its space (`show`), rendered as the whole word's decision
-  (`pinned`) so what's underlined is what will go in. It is still the word being typed: a switch
-  key cycles it, Delete only clears `heldSpace`, and Space on it once switched to Japanese converts.
-  The next letter, Return, Tab, punctuation, a shortcut or a focus change commits the word and its
-  space in one `insertText`. Ghostty sends text committed on a letter key as text and encodes nothing for a key
+  it would turn off text replacements everywhere), Space and ASCII symbols (not digits) don't
+  commit: the word stays composed with `heldBoundary` set and is shown with that character
+  (`show`), rendered as the whole word's decision (`pinned`) so what's underlined is what will go
+  in. It is still the word being typed: a switch key cycles it (the symbol stays as typed, never
+  `。`), Delete only clears `heldBoundary`, and Space on it once switched to Japanese converts when
+  the boundary is a space and commits when it is a symbol. One boundary only: the next letter,
+  Return, a second symbol or Space, a digit, Tab, a shortcut or a focus change commits the word and
+  its boundary in one `insertText`. Ghostty sends text committed on a letter key as text and encodes nothing for a key
   the IME consumed while composing, which is what makes this work there; it reports its mouse
   selection as the caret, so the post-commit flip window can't.
 

@@ -39,6 +39,69 @@ import Testing
         #expect(marked == "안녕 ")
     }
 
+    /// A symbol is a boundary like Space: the word stays underlined with it, so it can still be changed.
+    @Test(arguments: [".", ",", "?", "!", "-", "'", ";", ":", ")", "\"", "/"])
+    func aSymbolKeepsTheWordUnderlinedWithIt(symbol: String) {
+        #expect(type("dkssud" + symbol).last == true)
+        #expect(field.text == "안녕" + symbol)
+        #expect(marked == "안녕" + symbol)
+    }
+
+    /// A switch key changes the word; the symbol stays as typed, half-width, also for Japanese.
+    @Test func aSwitchRightAfterASymbolChangesTheWordAndKeepsTheSymbol() {
+        type("dkssud.")
+        #expect(session.handle(.cycle, client: field))
+        #expect(field.text == "dkssud." && marked == "dkssud.")
+        #expect(session.handle(.cycle, client: field))
+        #expect(field.text == "안녕." && marked == "안녕.")
+    }
+
+    @Test func deleteTakesBackOnlyTheSymbolThenAShiftEscChangesTheWord() {
+        type("dkssud.")
+        #expect(session.handle(.delete, client: field))
+        #expect(field.text == "안녕" && marked == "안녕")
+        #expect(session.handle(.cycle, client: field))
+        #expect(field.text == "dkssud" && marked == "dkssud")
+    }
+
+    /// One boundary only: the next letter, Return, a second symbol, Space or a digit puts the word
+    /// in with its symbol in one insertion, and the key goes where it goes today.
+    @Test func theNextLetterCommitsTheWordWithItsSymbol() {
+        type("dkssud.gktpdy")
+        #expect(field.text == "안녕.하세요" && marked == "하세요")
+    }
+
+    @Test func returnCommitsTheWordWithItsSymbolAndOnlyConfirms() {
+        type("dkssud.")
+        #expect(session.handle(.enter, client: field))
+        #expect(field.text == "안녕." && marked == nil)
+        #expect(!session.handle(.enter, client: field))
+    }
+
+    @Test(arguments: [".", " ", "3", "!"])
+    func aSecondBoundaryCommitsTheWordWithItsSymbolAndGoesToTheApp(next: String) {
+        #expect(type("dkssud." + next).last == false)
+        #expect(field.text == "안녕." + next && marked == nil)
+    }
+
+    /// A held symbol ended the word: switched to Japanese, Space commits it instead of converting.
+    @Test func spaceOnAHeldSymbolWordSwitchedToJapaneseCommitsWithoutConverting() {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("seamtype-hold-ja-sym-\(UUID().uuidString).json")
+        let engine = LearningEngine(base: SplittingEngine(base: trilingual, english: trilingual.english, japanese: trilingual.segmenter), storeURL: url)
+        let japanese = InputSession(engine: engine, policies: AppPolicies(overrides: ["test.hold": .init(holdSpace: true, fullWidth: false)]),
+                                    converter: FakeConverter(), japaneseEnabled: true)
+        japanese.activate(app: "test.hold")
+        let field = FakeTextField()
+        for ch in "hello" { japanese.handle(.letter(ch), client: field) }
+        japanese.handle(.printable("."), client: field)
+        #expect(field.text == "hello.")
+        japanese.handle(.cycle, client: field)
+        #expect(field.text == "へっぉ.")
+        #expect(!japanese.handle(.printable(" "), client: field))
+        #expect(japanese.conversion == nil)
+        #expect(field.text == "へっぉ." && field.marked.location == NSNotFound)
+    }
+
     @Test func theNextWordCommitsTheHeldOne() {
         type("dkssud gktpdy")
         #expect(field.text == "안녕 하세요")
@@ -153,7 +216,8 @@ import Testing
     /// Holding changes when a word goes in, never what goes in: in a Strict app (as terminals are
     /// usually set) a line comes out the same with or without it.
     @Test(arguments: ["gst ls", "cd src", "git status", "rm -rf", "ls -al", "gs ", "vi ", "tmux a",
-                      "brew install", "npm run dev", "dkssud gktpdy", "rkskek "])
+                      "brew install", "npm run dev", "dkssud gktpdy", "rkskek ",
+                      "echo \"hi.\"", "git commit -m \"fix.\"", "ls -al.", "a/b/c", "dkssud, gktpdy!", "x; y"])
     func strictAppTypesTheSameLine(keys: String) {
         func run(hold: Bool) -> String {
             let field = FakeTextField()
