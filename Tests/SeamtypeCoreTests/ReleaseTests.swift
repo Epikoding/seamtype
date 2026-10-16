@@ -65,6 +65,54 @@ import Testing
         #expect(Release.headline(of: "그냥 문장입니다.") == ("그냥 문장입니다.", nil))
     }
 
+    /// A tag that isn't a plain version is no release to offer: it names the downloaded file,
+    /// which pkgutil prints above the certificate (v9.9 (2UZ65T3U82) would look like the team).
+    @Test func takesOnlyPlainVersions() {
+        func release(_ tag: String) -> Release? {
+            let json = #"{ "tag_name": "\#(tag)", "assets": [ { "name": "Seamtype.pkg", "browser_download_url": "https://example.com/Seamtype.pkg" } ] }"#
+            return Release(gitHubJSON: Data(json.utf8))
+        }
+        #expect(release("v0.1.12")?.version == "0.1.12")
+        #expect(release("0.2")?.version == "0.2")
+        #expect(release("v9.9 (2UZ65T3U82)") == nil)
+        #expect(release("v0.2.0-beta.1") == nil)
+        #expect(release("v0..1") == nil)
+        #expect(release("v") == nil)
+    }
+
+    /// pkgutil's answer for 0.1.11, and the same with each part that must hold taken away.
+    @Test func readsTheSignatureFromPkgutil() {
+        let signed = """
+        Package "Seamtype-0.1.11.pkg":
+           Status: signed by a developer certificate issued by Apple for distribution
+           Notarization: trusted by the Apple notary service
+           Signed with a trusted timestamp on: 2026-10-14 12:40:35 +0000
+           Certificate Chain:
+            1. Developer ID Installer: Dongbin Lee (2UZ65T3U82)
+               Expires: 2027-02-01 22:12:15 +0000
+               SHA256 Fingerprint:
+                   C3 F0 18 AF 01 C2 F8 84 72 39 54 D2 2F 32 08 62 39 5D 52 38 1D 9A
+                   0F A1 B5 20 54 57 DA C4 D8 E7
+               ------------------------------------------------------------------------
+            2. Developer ID Certification Authority
+               Expires: 2027-02-01 22:12:15 +0000
+               ------------------------------------------------------------------------
+            3. Apple Root CA
+               Expires: 2035-02-09 21:40:36 +0000
+        """
+        #expect(Release.isSigned(pkgutilOutput: signed, team: "2UZ65T3U82"))
+        #expect(!Release.isSigned(pkgutilOutput: signed, team: "ABCDE12345"))
+        // Another team's installer, with Seamtype's team only in the file name.
+        let forged = signed
+            .replacingOccurrences(of: "Seamtype-0.1.11.pkg", with: "Seamtype-9.9 (2UZ65T3U82).pkg")
+            .replacingOccurrences(of: "Dongbin Lee (2UZ65T3U82)", with: "Someone Else (ABCDE12345)")
+        #expect(!Release.isSigned(pkgutilOutput: forged, team: "2UZ65T3U82"))
+        // Not notarized, or an application certificate rather than an installer one.
+        #expect(!Release.isSigned(pkgutilOutput: signed.replacingOccurrences(of: "   Notarization: trusted by the Apple notary service\n", with: ""), team: "2UZ65T3U82"))
+        #expect(!Release.isSigned(pkgutilOutput: signed.replacingOccurrences(of: "Developer ID Installer", with: "Developer ID Application"), team: "2UZ65T3U82"))
+        #expect(!Release.isSigned(pkgutilOutput: "Package \"Seamtype.pkg\":\n   Status: no signature\n", team: "2UZ65T3U82"))
+    }
+
     @Test func comparesVersionsByNumber() {
         #expect(Release.isNewer("0.1.10", than: "0.1.9"))
         #expect(Release.isNewer("0.2", than: "0.1.9"))
@@ -72,6 +120,8 @@ import Testing
         #expect(!Release.isNewer("0.1.5", than: "0.1.5"))
         #expect(!Release.isNewer("0.2", than: "0.2.0"))
         #expect(!Release.isNewer("0.1.4", than: "0.1.5"))
+        #expect(!Release.isNewer("0.2.0-beta.1", than: "0.2.0"))
+        #expect(!Release.isNewer("0.2.0-beta.1", than: "0.1.9"))
     }
 
     @Test func updateChecksAreOnUnlessTurnedOff() throws {

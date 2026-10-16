@@ -292,6 +292,18 @@ final class FakeTextField: TextClient {
     }
 
     /// A single letter with a particle (a variable name, an axis) is typed as such.
+    /// Esc cycles back to the engine's own split (x에, hello월드), which the particle split alone
+    /// doesn't find, and skips the garbled readings while it is there (ㅌ에, ㅗ디ㅣㅐ월드).
+    @Test(arguments: [("xdp", "x에"), ("hellodnjfem", "hello월드")])
+    func escCyclesBackToTheEnginesSplit(keys: String, split: String) {
+        let s = session(japanese: true)
+        type(s, keys)
+        #expect(field.text == split)
+        var seen: [String] = []
+        for _ in 0..<4 { _ = s.handle(.escape, client: field); seen.append(field.text) }
+        #expect(seen == [keys, split, keys, split])
+    }
+
     @Test func typesSingleLetterWithParticle() {
         type(session(), "xdp ndl Xfmf Xeh ")
         #expect(field.text == "x에 n이 X를 X도 ")

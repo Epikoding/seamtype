@@ -7,7 +7,8 @@ i=0; while pgrep -x Seamtype >/dev/null && [ $i -lt 30 ]; do sleep 0.1; i=$((i+1
 pkill -9 -x Seamtype 2>/dev/null || true
 user=$(stat -f %Su /dev/console)
 if [ -n "$user" ] && [ "$user" != root ]; then
-  home=$(dscl . -read "/Users/$user" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
+  # dscacheutil, not dscl | awk: dscl puts a home with a space on a line of its own.
+  home=$(dscacheutil -q user -a name "$user" | sed -n 's/^dir: //p' | head -1)
   [ -n "$home" ] && rm -rf "$home/Library/Application Support/Seamtype"
 fi
 exit 0

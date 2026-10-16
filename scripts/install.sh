@@ -89,13 +89,15 @@ pkill -x Seamtype 2>/dev/null || true
 i=0; while pgrep -x Seamtype >/dev/null && [ $i -lt 30 ]; do sleep 0.1; i=$((i+1)); done
 pkill -9 -x Seamtype 2>/dev/null || true
 i=0; while pgrep -x Seamtype >/dev/null && [ $i -lt 30 ]; do sleep 0.1; i=$((i+1)); done
+# Before registering: a register that fails ends the script, and the old copy left in the folder
+# would be the same input method twice.
+rm -rf "$dest/.Seamtype.app.old"
 echo "installed $dest/Seamtype.app"
 
 id=com.aimdevlee.inputmethod.Seamtype
 enabled=false
 # Registering also forgets other copies LaunchServices knows.
 "$dest/Seamtype.app/Contents/MacOS/Seamtype" --register
-rm -rf "$dest/.Seamtype.app.old"
 # Two copies make two input methods, and macOS may launch the wrong one: a reinstall the user
 # chose in the terminal takes the pkg's copy out (with its receipt). Only after this copy is
 # registered: removed first, it takes the input source (and the user's choice to use it) along.

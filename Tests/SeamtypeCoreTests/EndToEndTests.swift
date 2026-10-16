@@ -62,6 +62,27 @@ import Testing
         #expect(field.text == expected)
     }
 
+    /// Shift held a key too long after ㄸ or ㄲ (어떤 as djEJs) in a terminal, after English too.
+    @Test func lingeringShiftTypesKorean() {
+        session.activate(app: "test.terminal")
+        type("ok djEJs qkRNleh TkdRJvnf Hello API ")
+        #expect(field.text == "ok 어떤 바뀌도 쌍꺼풀 Hello API ")
+    }
+
+    /// An acronym typed straight into a Korean word splits, and the same shape typed as fast Korean doesn't.
+    @Test func acronymBeforeKoreanWordSplits() {
+        session.activate(app: "test.terminal")
+        type("EUwjdcor TMfkrh TBvkdlf ")
+        #expect(field.text == "EU정책 쓰라고 TB파일 ")
+    }
+
+    /// An acronym a lingering Shift could read as Korean (TM as 쓰) keeps a particle in its own form.
+    @Test func acronymWithAgreeingParticle() {
+        session.activate(app: "test.terminal")
+        type("ok TMdms TLdmf TMsms ")
+        #expect(field.text == "ok TM은 TL을 쓰는 ")
+    }
+
     /// In a terminal (0.97), 어떻게 after an English word is 0.969 sure: what was shown is committed.
     @Test func spaceCommitsWhatThePreviewShows() {
         session.activate(app: "test.terminal")
@@ -69,6 +90,14 @@ import Testing
         #expect(field.text == "esc 어떻게") // still composing (marked)
         type(" todrkrgo?")
         #expect(field.text == "esc 어떻게 생각해?")
+    }
+
+    /// In a terminal, a noun the word lists have only with a particle (혜택) still converts
+    /// after an English word.
+    @Test func terminalKoreanNounAfterEnglish() {
+        session.activate(app: "test.terminal")
+        type("hello gPxor ")
+        #expect(field.text == "hello 혜택 ")
     }
 
     /// In a terminal Esc belongs to the app (vim): the word goes in as shown and Esc goes on.

@@ -29,7 +29,7 @@ final class Updater: ObservableObject {
     private static var latest: URL {
         UserDefaults.standard.string(forKey: "updateFeed").flatMap(URL.init(string:)) ?? gitHub
     }
-    private static let teamID = "2UZ65T3U82"
+    nonisolated private static let teamID = "2UZ65T3U82"
     private static let interval: TimeInterval = 24 * 60 * 60
     private enum Key {
         static let checked = "updateLastCheck", version = "updateVersion", package = "updatePackage", page = "updatePage", notes = "updateNotes"
@@ -120,18 +120,20 @@ final class Updater: ObservableObject {
                 try? FileManager.default.removeItem(at: target)
                 if (try? FileManager.default.moveItem(at: file, to: target)) != nil { saved = target }
             }
+            // Checked here, off the main thread: pkgutil may ask Apple about notarization.
+            let signed = saved.map(Self.isSignedBySeamtype) ?? false
             DispatchQueue.main.async {
-                MainActor.assumeIsolated { Updater.shared.finishDownload(saved) }
+                MainActor.assumeIsolated { Updater.shared.finishDownload(saved, signed: signed) }
             }
         }.resume()
     }
 
-    private func finishDownload(_ package: URL?) {
+    private func finishDownload(_ package: URL?, signed: Bool) {
         guard let package else {
             state = .failed(L("Couldn't download the update. Try again later."))
             return
         }
-        guard Self.isSignedBySeamtype(package) else {
+        guard signed else {
             try? FileManager.default.removeItem(at: package)
             state = .failed(L("The downloaded installer isn't signed by Seamtype's developer, so it was deleted."))
             return
@@ -142,7 +144,7 @@ final class Updater: ObservableObject {
 
     /// `pkgutil --check-signature`: a Developer ID Installer certificate with Seamtype's team,
     /// notarized by Apple.
-    private static func isSignedBySeamtype(_ package: URL) -> Bool {
+    nonisolated private static func isSignedBySeamtype(_ package: URL) -> Bool {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/pkgutil")
         process.arguments = ["--check-signature", package.path]
@@ -152,8 +154,6 @@ final class Updater: ObservableObject {
         guard (try? process.run()) != nil else { return false }
         let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
         process.waitUntilExit()
-        return process.terminationStatus == 0
-            && output.contains("Developer ID Installer:") && output.contains("(\(teamID))")
-            && output.contains("Notarization: trusted")
+        return process.terminationStatus == 0 && Release.isSigned(pkgutilOutput: output, team: teamID)
     }
 }

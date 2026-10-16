@@ -14,6 +14,11 @@ public enum RomajiComposer {
         public let kanaCount: Int
 
         public var isClean: Bool { strayLetters == 0 && pending.isEmpty }
+        /// Only っ and letters (ff: っf, sss: っっs): a doubled consonant at the start with no
+        /// kana after it, which no Japanese word is (って has kana after its っ).
+        public var isOnlySokuon: Bool {
+            text.first == "っ" && text.allSatisfy { $0 == "っ" || ($0.isASCII && $0.isLetter) }
+        }
     }
 
     /// - Parameter partial: the word is still being typed, so a trailing "k" or "n"

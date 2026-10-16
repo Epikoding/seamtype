@@ -32,7 +32,11 @@ public struct Release: Equatable, Sendable {
         }
         guard let answer = try? JSONDecoder().decode(Answer.self, from: data),
               let package = answer.assets.first(where: { $0.name == "Seamtype.pkg" }) else { return nil }
-        version = answer.tag_name.hasPrefix("v") ? String(answer.tag_name.dropFirst()) : answer.tag_name
+        let version = answer.tag_name.hasPrefix("v") ? String(answer.tag_name.dropFirst()) : answer.tag_name
+        // Numbers and dots only: the version names the downloaded file, and pkgutil prints that
+        // name above the certificate it checks.
+        guard Self.isVersion(version) else { return nil }
+        self.version = version
         self.package = package.browser_download_url
         page = answer.html_url
         notes = Self.changes(in: answer.body ?? "")
@@ -71,8 +75,30 @@ public struct Release: Equatable, Sendable {
         return items
     }
 
-    /// "0.1.10" is newer than "0.1.9"; a missing part counts as 0 ("0.2" == "0.2.0").
+    /// "0.1.10", "0.2": numbers joined by dots, nothing else.
+    public static func isVersion(_ version: String) -> Bool {
+        let parts = version.split(separator: ".", omittingEmptySubsequences: false)
+        return !parts.isEmpty && parts.allSatisfy { !$0.isEmpty && $0.allSatisfy { $0.isASCII && $0.isNumber } }
+    }
+
+    /// Whether `pkgutil --check-signature` says the installer is signed with a Developer ID
+    /// Installer certificate of `team` and notarized. The output starts with the package's file
+    /// name (`Package "Seamtype-0.1.11.pkg":`), then the status, then the certificate chain from
+    /// the signing certificate (`1. Developer ID Installer: Name (TEAM)`) up to Apple's root.
+    public static func isSigned(pkgutilOutput output: String, team: String) -> Bool {
+        let lines = output.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
+        // The signing certificate's own line, not anywhere in the output: the file name above it
+        // may hold any text. More than one chain is no answer pkgutil gives.
+        let leaves = lines.filter { $0.hasPrefix("1. ") }
+        guard leaves.count == 1, let leaf = leaves.first else { return false }
+        return lines.contains { $0.hasPrefix("Notarization: trusted") }
+            && leaf.hasPrefix("1. Developer ID Installer:") && leaf.hasSuffix("(\(team))")
+    }
+
+    /// "0.1.10" is newer than "0.1.9"; a missing part counts as 0 ("0.2" == "0.2.0"). Only a plain
+    /// version is newer: 0.2.0-beta.1 isn't newer than 0.2.0 or anything else.
     public static func isNewer(_ version: String, than current: String) -> Bool {
+        guard isVersion(version) else { return false }
         func parts(_ v: String) -> [Int] { v.split(separator: ".").map { Int($0.prefix(while: \.isNumber)) ?? 0 } }
         let a = parts(version), b = parts(current)
         for i in 0..<max(a.count, b.count) {

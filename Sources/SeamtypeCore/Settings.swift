@@ -4,7 +4,8 @@ import Foundation
 ///
 ///     { "japanese": true, "liveConversion": true }
 ///
-/// A missing file or key means the default; unknown keys are ignored (and kept on save).
+/// A missing file or key means the default, and so does a value of the wrong type; unknown keys
+/// are ignored (and kept on save). A file that isn't JSON is set aside as settings.json.unreadable.
 public struct Settings: Codable, Equatable, Sendable {
     /// Detect romaji Japanese and convert it (kana preview, Space for kanji).
     public var japanese: Bool = false
@@ -42,14 +43,18 @@ public struct Settings: Codable, Equatable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        japanese = try c.decodeIfPresent(Bool.self, forKey: .japanese) ?? false
-        liveConversion = try c.decodeIfPresent(Bool.self, forKey: .liveConversion) ?? false
-        rightCommandPause = try c.decodeIfPresent(Bool.self, forKey: .rightCommandPause) ?? true
-        returnConfirmsOnly = try c.decodeIfPresent(Bool.self, forKey: .returnConfirmsOnly) ?? true
-        checkForUpdates = try c.decodeIfPresent(Bool.self, forKey: .checkForUpdates) ?? true
-        japaneseEngine = try c.decodeIfPresent(String.self, forKey: .japaneseEngine) ?? "apple"
-        fullWidthDigits = try c.decodeIfPresent(Bool.self, forKey: .fullWidthDigits) ?? false
-        fullWidthSpace = try c.decodeIfPresent(Bool.self, forKey: .fullWidthSpace) ?? false
+        // One value of the wrong type ("true" for true) is that key's default, not the whole file's.
+        func value<T: Decodable>(_ key: CodingKeys, _ fallback: T) -> T {
+            ((try? c.decodeIfPresent(T.self, forKey: key)) ?? nil) ?? fallback
+        }
+        japanese = value(.japanese, false)
+        liveConversion = value(.liveConversion, false)
+        rightCommandPause = value(.rightCommandPause, true)
+        returnConfirmsOnly = value(.returnConfirmsOnly, true)
+        checkForUpdates = value(.checkForUpdates, true)
+        japaneseEngine = value(.japaneseEngine, "apple")
+        fullWidthDigits = value(.fullWidthDigits, false)
+        fullWidthSpace = value(.fullWidthSpace, false)
     }
 
     public static var storeURL: URL? {
@@ -57,8 +62,11 @@ public struct Settings: Codable, Equatable, Sendable {
     }
 
     public static func load(from url: URL? = Settings.storeURL) -> Settings {
-        guard let url, let data = try? Data(contentsOf: url),
-              let settings = try? JSONDecoder().decode(Settings.self, from: data) else { return Settings() }
+        guard let url, let data = try? Data(contentsOf: url) else { return Settings() }
+        guard let settings = try? JSONDecoder().decode(Settings.self, from: data) else {
+            SupportDirectory.setAside(url)
+            return Settings()
+        }
         return settings
     }
 

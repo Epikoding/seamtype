@@ -218,7 +218,9 @@ Languages. Changes apply at once.
 ### Settings files
 
 The menu and the settings window both write `~/Library/Application Support/Seamtype/settings.json`.
-You can edit it by hand; missing keys keep the default.
+You can edit it by hand; missing keys, and values of the wrong type (`"true"` in quotes), keep the
+default. A file that isn't readable JSON is moved to `settings.json.unreadable` rather than written
+over (`apps.json` and `lexicon.json` too).
 
 ```json
 { "japanese": true, "liveConversion": true }
@@ -233,6 +235,7 @@ You can edit it by hand; missing keys keep the default.
 | `fullWidthDigits` | off | Numbers after Japanese come out full-width (`１２３`, `０３－１２３４` in addresses and phone numbers), underlined, with Space offering `123` (half-width) or conversions like `三月`. |
 | `fullWidthSpace` | off | Space after Japanese types a full-width space (`　`). ⇧Space types the other width (full-width while this is off). |
 | `japaneseEngine` | `"apple"` | Kanji conversion: `"apple"` uses the engine of macOS's Japanese input, `"azooKey"` the AzooKey converter in the app. |
+| `checkForUpdates` | on | Once a day, ask GitHub for the latest release's version (nothing else is sent), and say so in the input menu and About when it is newer. |
 
 With live conversion, Space opens the candidate window at the next candidate, and Esc shows the
 kana (Esc again switches language where Esc is a switch key, else commits the kana and goes to the
@@ -242,8 +245,8 @@ converts). The top candidate is right for about 4 in 5 short phrases and 3 in 4 
 keystroke.
 
 Per-app behavior lives in `apps.json` in the same folder. `"*"` is your default for every app; an
-app (by bundle identifier, a key ending in `.` matches as a prefix) names only the keys that differ
-from it. No app is listed unless you list it.
+app (by bundle identifier, a key ending in `.` matches as a prefix, the longest one when several
+do) names only the keys that differ from it. No app is listed unless you list it.
 
 ```json
 { "*":                     { "switchKeys": ["escape", "shiftEscape"] },
@@ -256,7 +259,7 @@ from it. No app is listed unless you list it.
 | --- | --- | --- |
 | `enabled` | `true` | `false` passes every key through (plain English). |
 | `conversionThreshold` | `0.5` | Convert away from the typed letters only when at least this sure. `0.97` (Strict) keeps short shell commands from turning into Hangul in a terminal; `0.5` converts more Korean when you write prose. |
-| `switchKeys` | `["rightOption", "shiftEscape"]` | The keys that switch readings ([language switch keys](#language-switch-keys)): `"rightOption"` (right ⌥ tapped alone), `"optionSpace"` (⌥Space), `"rightShift"` (right ⇧ tapped alone), `"escape"` (Esc), `"shiftEscape"` (⇧Esc). A key not chosen goes to the app. 0.1.9's `escapeToApp`, and `switchKey` in settings.json, are read and carried over. |
+| `switchKeys` | `["rightOption", "shiftEscape"]` | The keys that switch readings ([language switch keys](#language-switch-keys)): `"rightOption"` (right ⌥ tapped alone), `"optionSpace"` (⌥Space), `"rightShift"` (right ⇧ tapped alone), `"escape"` (Esc), `"shiftEscape"` (⇧Esc). A key not chosen goes to the app. `escapeToApp`, from 0.1.8 and earlier, is read and carried over. |
 | `holdSpace` | `false` | Space or a punctuation mark (not a digit) goes inside the underline instead of ending the word. Like a word being typed, a switch key changes it and Delete deletes; the next word puts it in with that character. For terminals, which can't change a committed word, so set per app only (not in `"*"`); Return only confirms it, and text replacements don't fire. |
 | `fullWidth` | `true` | `false` keeps numbers and spaces half-width in this app whatever the full-width settings say (terminals, code editors). |
 
@@ -274,13 +277,21 @@ Locally, in this order. A keystroke's preview takes at most ~3 ms and a word's f
      reading the whole token as Hangul or as English. The more common the English word (or an
      acronym or name typed in capitals) and the less the whole reads as a Korean word, the likelier
      the split: `githubdp` → `github에`, `UIrkxdmsrjs` → `UI같은건`, `formdptj` → `form에서` (래그 is
-     no word). `gosemfdmf` stays `핸들을`.
+     no word). `gosemfdmf` stays `핸들을`. Of 은/는, 을/를 and 이/가, the form that fits the end of the
+     word before counts as likelier: an acronym ends as its last letter is said (`TMdms` → `TM은`,
+     티엠), and whole Hangul with the wrong form (`씨을`) isn't taken as a word + particle. An acronym
+     shaped like a double consonant with a lingering Shift stays Hangul when that reading is right
+     too: `TMsms` → `쓰는` (TM takes `은`), `TLdp` → `씨에` (`에` has one form).
    - A single English letter + particle, as in a variable name: `xdp` → `x에`, `Xfmf` → `X를`. Not
      `도`/`나` after a lowercase letter, which are common English endings (`heh`, `tsk`); a capital
      gives `X도`.
    - English + Korean word, when the front is a known English word (or a name typed with capitals)
      and the back is in the Korean word list. When the whole token spells nothing like English, any
-     Hangul of common syllables splits too. `hellodnjfem` → `hello월드`, `githubtjqj` → `github서버`
+     Hangul of common syllables splits too. `hellodnjfem` → `hello월드`, `githubtjqj` → `github서버`.
+     Acronyms too (`PDFvkdlf` → `PDF파일`). One shaped like a double consonant with a lingering
+     Shift (`EU` is `뗘`) splits only when that syllable doesn't exist in Korean and a word from the
+     list follows: `EUwjdcor` → `EU정책`. `TMwjdcor` is `쓰정책` (쓰 is a common syllable) and
+     `EUdlswmd` is `뗘인증` (인증 isn't in the list); type such acronyms as `TM 정책`, with a space.
    - Korean, then an English word: `dhsmfdmsgoogledptj` → `오늘은google에서`. The Korean goes in
      and the rest keeps composing.
    - With Japanese on:
@@ -292,7 +303,10 @@ Locally, in this order. A keystroke's preview takes at most ~3 ms and a word's f
        `kyouhaehtlfkrdms` → `きょうは도시락은`. The Japanese part is committed on the spot, so with
        live conversion it goes in as `履歴를`, `今日は도시락은`.
      - These split only when the Korean side breaks, so ordinary Japanese phrases stay whole.
-3. **Rules:** shift on a letter with no shifted jamo (`Hello`, `API`) is English.
+3. **Rules:** shift on a letter with no shifted jamo (`Hello`, `API`) is English, except when it
+   lingers from a double consonant or ㅒ/ㅖ onto the one key right after (`djEJs` → `어떤`,
+   `dlTDj` → `있어`, `dPFmf` → `예를`): those go by the scores. An acronym typed in capitals
+   throughout (`TM`, `RN`) or a word starting on O or P (`PDFvkdlf` → `PDF파일`, `OAuth`) stays English.
 4. **Heuristic:** the keys are scored per keystroke in all three languages, plus a nudge toward the
    previous word's language.
    - English: character trigrams, and a floor for words in the SCOWL list, by how common they are
@@ -317,7 +331,7 @@ never used to build the models (`tools/prepare.sh`):
 
 | | Japanese off (en/ko) | Japanese on (en/ko/ja) |
 | --- | --- | --- |
-| Accuracy | 99.80% | 99.48% |
+| Accuracy | 99.82% | 99.50% |
 
 That set counts every word once and seldom puts it after the other language. But real text is
 mostly its most frequent words, and switching language mid-sentence is the point, so the 10,000
@@ -326,11 +340,11 @@ most frequent English and Korean words are also scored after each kind of word
 
 | | after nothing | after the same language | after the other | after Japanese |
 | --- | --- | --- | --- | --- |
-| Korean words | 9 / 42 | 2 / 16 | 16 / 159 | 9 / 46 |
+| Korean words | 9 / 33 | 2 / 15 | 14 / 63 | 9 / 34 |
 | English words | 2 / 47 | 0 / 21 | 8 / 71 | 2 / 86 |
 
 Before the SCOWL and Korean word lists and the switch-aware nudge, that was 94 / 785 in all; now
-it is 48 / 488. These lists were used while tuning those rules, so they're a guide, not a
+it is 46 / 370. These lists were used while tuning those rules, so they're a guide, not a
 held-out score. Many remaining misses are genuinely ambiguous keys: `so`/내, `go`/해, `did`/양.
 
 Kanji conversion, top candidate exactly matching the original text (held-out Tatoeba):
@@ -391,4 +405,5 @@ or copied into it in `Contents/Resources/ThirdPartyNotices.txt`, collected by
 - English/Korean frequency lists:
   [hermitdave/FrequencyWords](https://github.com/hermitdave/FrequencyWords), CC-BY-SA 4.0. Used
   for evaluation; the Korean list also ships as `korean_vocabulary.txt` (for splitting an English
-  word from a Korean one), under the same license, with its notice in the app.
+  word from a Korean one, and for Korean words Tatoeba's sentences lack: 혜택, 닥터), under the
+  same license, with its notice in the app.

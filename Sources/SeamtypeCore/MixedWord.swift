@@ -17,6 +17,52 @@ public struct MixedWord: Equatable, Sendable {
     이라는 라는 이란 에선 으론 로서 으로서
     """.split(whereSeparator: \.isWhitespace).map(String.init))
 
+    /// Particles with a form after a final consonant and one after a vowel (책을, 사과를): the
+    /// consonant form first. A final ㄹ takes the vowel form of 으로 (서울로).
+    static let pairedParticles: [(consonant: String, vowel: String)] = [
+        ("을", "를"), ("은", "는"), ("이", "가"), ("과", "와"), ("이랑", "랑"), ("이랑은", "랑은"),
+        ("으로", "로"), ("으로는", "로는"), ("으로도", "로도"), ("으론", "론"), ("으로서", "로서"),
+        ("이나", "나"), ("이야", "야"), ("이라", "라"), ("이라고", "라고"), ("이라는", "라는"), ("이란", "란"),
+        ("이에요", "예요"),
+    ]
+
+    /// Whether `particle` is the form that follows a word ending as `final` describes:
+    /// nil for a particle that has one form (에, 도, 의), else true or false (씨이, 쓰은 are wrong).
+    static func particleAgrees(_ particle: String, final: FinalSound) -> Bool? {
+        for pair in pairedParticles {
+            if particle == pair.consonant {
+                return final == .consonant || (final == .rieul && !pair.consonant.hasPrefix("으"))
+            }
+            if particle == pair.vowel {
+                return final == .vowel || (final == .rieul && pair.consonant.hasPrefix("으"))
+            }
+        }
+        return nil
+    }
+
+    enum FinalSound { case vowel, consonant, rieul }
+
+    /// How a Hangul syllable ends; nil for anything else.
+    static func finalSound(of syllable: Character) -> FinalSound? {
+        guard let scalar = syllable.unicodeScalars.first, syllable.unicodeScalars.count == 1,
+              (0xAC00...0xD7A3).contains(scalar.value) else { return nil }
+        switch (scalar.value - 0xAC00) % 28 {
+        case 0: return .vowel
+        case 8: return .rieul
+        default: return .consonant
+        }
+    }
+
+    /// How an acronym ends when read letter by letter: L, M, N and R (엘, 엠, 엔, 알) on a final
+    /// consonant, every other letter's name on a vowel (TM은, TV는).
+    static func finalSound(ofAcronym acronym: String) -> FinalSound {
+        switch acronym.last?.uppercased() {
+        case "L", "R": return .rieul
+        case "M", "N": return .consonant
+        default: return .vowel
+        }
+    }
+
     /// Particles that follow a single letter (x에, n이, a를, X축의 X): case particles only, not
     /// endings like 해/한, so short English (ago) doesn't split.
     static let singleLetterParticles: Set<String> = Set("""
@@ -152,19 +198,32 @@ public final class SplittingEngine: DecisionEngine, @unchecked Sendable {
         let spelling = english.averageLogProbability(keys)
         // Clean romaji (hasansowo, はさんそを) is Japanese, not English + Hangul.
         guard spelling < mixedWordSpellingCeiling, !RomajiComposer.compose(keys).isClean else { return nil }
+        // Capitals count only when one has no Korean meaning (ThkT is 쐈, not a name). Judged on
+        // the whole token: the front alone has no lowercase to show a lingering Shift (TMfkrh is
+        // 쓰라고, not TM라고). Keys that read as Korean throughout are Korean unless such a capital
+        // says otherwise.
+        let englishOnlyCapital = Self.hasEnglishOnlyCapital(keys)
+        guard englishOnlyCapital || !readsAsKorean(keys) else { return nil }
         for start in stride(from: chars.count - 2, through: 2, by: -1) {
             let front = String(chars[..<start]), back = String(chars[start...])
-            // Capitals count only when one has no Korean meaning (ThkT is 쐈, not a name).
-            guard (Self.hasEnglishOnlyCapital(front) && (Self.isAcronym(front) || Self.isCapitalizedName(front)))
-                    || (front.count >= 3 && english.isKnownWord(front)),
-                  back.first.map(DubeolsikLayout.startsSyllable) == true,
+            guard back.first.map(DubeolsikLayout.startsSyllable) == true,
                   let composed = HangulComposer.compose(keys: back), composed.strayJamo.isEmpty,
-                  composed.syllables.count >= 2,
-                  isKoreanWordOrWordWithParticle(composed.text)
+                  composed.syllables.count >= 2 else { continue }
+            let knownKorean = isKoreanWordOrWordWithParticle(composed.text)
+            guard knownKorean
                     || (spelling < unknownWordSpellingCeiling
                         && composed.syllables.allSatisfy { korean.syllableLogProbability($0) > KoreanModel.unknownSyllableLogP })
             else { continue }
-            guard Self.hasEnglishOnlyCapital(front) || !readsAsKorean(keys) else { return nil }
+            // An acronym a lingering Shift could explain (EU as ㄸ+ㅕ) counts when its own keys spell
+            // a syllable no list or corpus has (뗘) and a known Korean word follows. Korean typed
+            // fast keeps its rare syllables (삐졌어 as QLwuTdj: 삐 is rare, but seen) and 쓰정책
+            // (TMwjdcor) reads as Korean outright; both stay Korean. Only the front is judged: the
+            // word after may well hold a rare syllable (또공룡이 as EHrhdfyddl).
+            let acronym = Self.isAcronym(front)
+            guard (englishOnlyCapital && (acronym || Self.isCapitalizedName(front)))
+                    || (acronym && knownKorean && !spellsSeenKorean(front))
+                    || (front.count >= 3 && english.isKnownWord(front))
+            else { continue }
             return MixedWord(english: front, koreanKeys: back, korean: composed.text)
         }
         return nil
@@ -178,8 +237,15 @@ public final class SplittingEngine: DecisionEngine, @unchecked Sendable {
         }
     }
 
+    /// A capital no lingering Shift explains (RNl, 꿀 typed fast, isn't a name).
     static func hasEnglishOnlyCapital(_ front: String) -> Bool {
-        front.contains { $0.isUppercase && !DubeolsikLayout.isKoreanShiftKey($0) }
+        DubeolsikLayout.hasEnglishOnlyCapital(front)
+    }
+
+    /// Whole Hangul of syllables seen in the corpus or a word list, however rarely (삐, not 뗘).
+    private func spellsSeenKorean(_ keys: String) -> Bool {
+        guard let composed = HangulComposer.compose(keys: keys), composed.strayJamo.isEmpty else { return false }
+        return composed.syllables.allSatisfy(korean.knowsSyllable)
     }
 
     private func readsAsKorean(_ keys: String) -> Bool {

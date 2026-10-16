@@ -5,6 +5,8 @@
     <title>Seamtype</title>
     <options customize="allow" require-scripts="false" hostArchitectures="x86_64,arm64"/>
     <domains enable_localSystem="true"/>
+    <!-- Info.plist's LSMinimumSystemVersion: on an older macOS it would install and never start. -->
+    <allowed-os-versions><os-version min="13.0"/></allowed-os-versions>
     <choices-outline>
         <line choice="seamtype"/>
         <line choice="reset"/>

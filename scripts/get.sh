@@ -10,9 +10,11 @@
 # Without a terminal to ask in, it reinstalls, unless the installer package's copy is in /Library:
 # then it stops, since that copy can only be removed with a password.
 #
-# The app in the release zip is signed with the Developer ID and notarized, and a download made with
-# curl isn't quarantined anyway; the quarantine flag is cleared in case it's there.
-# SEAMTYPE_ZIP=/path/to/Seamtype.zip installs a local zip instead (for trying a build).
+# The app in the release zip is signed with the Developer ID and notarized; nothing in it runs until
+# that is checked (Seamtype's team, notarized), since it becomes the input method that sees every
+# key. A download made with curl isn't quarantined anyway; the flag is cleared in case it's there.
+# SEAMTYPE_ZIP=/path/to/Seamtype.zip installs a local zip instead (for trying a build); one built
+# without the Developer ID needs SEAMTYPE_UNSIGNED=1 as well.
 set -eu
 
 url="https://github.com/aimdevlee/seamtype/releases/latest/download/Seamtype.zip"
@@ -80,6 +82,12 @@ else
 fi
 ditto -x -k "$work/Seamtype.zip" "$work"
 [ -d "$work/Seamtype.app" ] || { echo "The download has no Seamtype.app." >&2; exit 1; }
+if [ "${SEAMTYPE_UNSIGNED:-}" != 1 ]; then
+  codesign --verify --deep --strict "$work/Seamtype.app" 2>/dev/null &&
+    codesign -dv "$work/Seamtype.app" 2>&1 | grep -qx 'TeamIdentifier=2UZ65T3U82' &&
+    spctl --assess --type execute "$work/Seamtype.app" 2>/dev/null ||
+    { echo "The downloaded Seamtype.app isn't signed by Seamtype's developer and notarized; nothing was installed." >&2; exit 1; }
+fi
 xattr -dr com.apple.quarantine "$work/Seamtype.app" 2>/dev/null || true
 
 # Uninstalling goes through the app (what About → Uninstall… does): both copies, the pkg's
@@ -106,8 +114,10 @@ pkill -x Seamtype 2>/dev/null || true
 i=0; while pgrep -x Seamtype >/dev/null && [ $i -lt 30 ]; do sleep 0.1; i=$((i+1)); done
 pkill -9 -x Seamtype 2>/dev/null || true
 i=0; while pgrep -x Seamtype >/dev/null && [ $i -lt 30 ]; do sleep 0.1; i=$((i+1)); done
-"$app/Contents/MacOS/Seamtype" --register
+# Before registering: a register that fails ends the script, and the old copy left in the folder
+# would be the same input method twice.
 rm -rf "$dest/.Seamtype.app.old"
+"$app/Contents/MacOS/Seamtype" --register
 # Two copies make two input methods, and macOS may launch the wrong one: a reinstall the user
 # chose takes the pkg's copy out (with its receipt). Only after this copy is registered: removed
 # first, it takes the input source (and the user's choice to use it) along.

@@ -41,10 +41,12 @@ jobs:
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
 
       # Always main, whatever branch the run was started from.
+      # The app's token isn't left in .git/config while the tests run: only the push gets it.
       - uses: actions/checkout@v4
         with:
           ref: main
           token: ${{ steps.app.outputs.token }}
+          persist-credentials: false
 
       - name: Set the version in Info.plist
         env:
@@ -75,7 +77,7 @@ jobs:
           git commit -am "$VERSION"
           git tag "v$VERSION"
           # One push: main and the tag land together or not at all (main moved on: run it again).
-          git push --atomic origin HEAD:main "v$VERSION"
+          git push --atomic "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git" HEAD:main "v$VERSION"
 
   release:
     if: github.event_name == 'push'
@@ -86,11 +88,18 @@ jobs:
       SEAMTYPE_NOTARY_PROFILE: seamtype
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Check the tag against Info.plist
+      - name: Check the tag against Info.plist and main
         run: |
           version=$(plutil -extract CFBundleShortVersionString raw Resources/Info.plist)
           [[ "$GITHUB_REF_NAME" == "v$version" ]] || { echo "tag $GITHUB_REF_NAME, Info.plist $version"; exit 1; }
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "$GITHUB_REF_NAME isn't on main"; exit 1; }
+
+      # Before the keychain: the tests build and run the dependencies' code, which has no business
+      # with an unlocked Developer ID.
+      - run: swift test
 
       - name: Keychain with the Developer ID certificates and notary credentials
         env:
@@ -122,8 +131,6 @@ jobs:
       # build-app.sh runs the self-test of the Intel half under Rosetta.
       - run: /usr/bin/pgrep -q oahd || softwareupdate --install-rosetta --agree-to-license
 
-      - run: swift test
-
       - run: scripts/release.sh
 
       - name: Verify the signatures
@@ -138,9 +145,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           version=${GITHUB_REF_NAME#v}
-          gh release create "$GITHUB_REF_NAME" --draft --title "Seamtype $version" --notes-file .github/release-notes.md \
-            build/release/Seamtype.pkg build/release/Seamtype.zip \
-            build/release/Seamtype-$version.pkg build/release/Seamtype-$version.zip
+          assets=(build/release/Seamtype.pkg build/release/Seamtype.zip
+                  build/release/Seamtype-$version.pkg build/release/Seamtype-$version.zip)
+          # A run started again after the draft was made (an upload failed) replaces its assets.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" --clobber "${assets[@]}"
+          else
+            gh release create "$GITHUB_REF_NAME" --draft --title "Seamtype $version" --notes-file .github/release-notes.md "${assets[@]}"
+          fi
 
       - name: Remove the keychain
         if: always()

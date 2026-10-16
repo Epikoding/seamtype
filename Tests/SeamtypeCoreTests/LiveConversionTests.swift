@@ -98,6 +98,19 @@ import Testing
         #expect(field.text == "안녕하세요 hello ")
     }
 
+    /// The candidate on screen goes in with the letters still waiting for their vowel after it,
+    /// and a short reading kept as kana on screen stays kana (うふぉs, not うフォs).
+    @Test func returnCommitsPendingLettersAsShown() {
+        type("kyouhaiitenkides")
+        #expect(field.text == "今日はいい天気でs")
+        type("⏎")
+        #expect(field.text == "今日はいい天気でs")
+        type(" ufos")
+        #expect(field.text == "今日はいい天気でs うふぉs")
+        type("⏎")
+        #expect(field.text == "今日はいい天気でs うふぉs")
+    }
+
     @Test func englishInsidePhraseAndPunctuation() {
         type("kyouhagoogledekensaku⏎")
         #expect(field.text == "今日はgoogleで検索")

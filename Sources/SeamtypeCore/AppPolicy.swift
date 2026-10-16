@@ -66,7 +66,7 @@ public struct AppPolicy: Codable, Equatable, Sendable {
         public var switchKeys: Set<SwitchKey>?
         public var holdSpace: Bool?
         public var fullWidth: Bool?
-        /// 0.1.9 and earlier: true sent Esc to the app, false made it switch. Read for an entry
+        /// 0.1.8 and earlier: true sent Esc to the app, false made it switch. Read for an entry
         /// that doesn't name `switchKeys`, as a change to the default's Esc, and kept until it does.
         var escapeToApp: Bool?
 
@@ -106,14 +106,16 @@ public struct AppPolicy: Codable, Equatable, Sendable {
 
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
-            enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled)
-            conversionThreshold = try c.decodeIfPresent(Double.self, forKey: .conversionThreshold)
+            // A value of the wrong type ("0.97" for 0.97) is left out, as if the entry didn't
+            // name it, rather than failing the whole file.
+            func value<T: Decodable>(_ key: CodingKeys) -> T? { (try? c.decodeIfPresent(T.self, forKey: key)) ?? nil }
+            enabled = value(.enabled)
+            conversionThreshold = value(.conversionThreshold)
             // A later version's key is skipped rather than failing the whole file.
-            switchKeys = (try? c.decodeIfPresent([String].self, forKey: .switchKeys))
-                .flatMap { $0 }.map { Set($0.compactMap(SwitchKey.init(rawValue:))) }
-            holdSpace = try c.decodeIfPresent(Bool.self, forKey: .holdSpace)
-            fullWidth = try c.decodeIfPresent(Bool.self, forKey: .fullWidth)
-            escapeToApp = try? c.decodeIfPresent(Bool.self, forKey: .escapeToApp)
+            switchKeys = (value(.switchKeys) as [String]?).map { Set($0.compactMap(SwitchKey.init(rawValue:))) }
+            holdSpace = value(.holdSpace)
+            fullWidth = value(.fullWidth)
+            escapeToApp = value(.escapeToApp)
         }
 
         public func encode(to encoder: Encoder) throws {
@@ -123,7 +125,7 @@ public struct AppPolicy: Codable, Equatable, Sendable {
             try c.encodeIfPresent(switchKeys.map(SwitchKey.list), forKey: .switchKeys)
             try c.encodeIfPresent(holdSpace, forKey: .holdSpace)
             try c.encodeIfPresent(fullWidth, forKey: .fullWidth)
-            // The 0.1.9 key stays until the entry names its own switch keys.
+            // The 0.1.8 key stays until the entry names its own switch keys.
             if switchKeys == nil { try c.encodeIfPresent(escapeToApp, forKey: .escapeToApp) }
         }
     }
@@ -147,11 +149,20 @@ public struct AppPolicies: Sendable {
         SupportDirectory.url?.appendingPathComponent("apps.json")
     }
 
-    /// Loads user overrides; a missing or unreadable file means none.
+    /// Loads user overrides; a missing file means none. An entry that isn't an object is left
+    /// out, and a file that isn't a JSON object is set aside as apps.json.unreadable, so the next
+    /// save doesn't write over the user's entries.
     public static func load(from url: URL? = AppPolicies.storeURL) -> AppPolicies {
-        guard let url, let data = try? Data(contentsOf: url),
-              let overrides = try? JSONDecoder().decode([String: AppPolicy.Override].self, from: data) else {
+        guard let url, let data = try? Data(contentsOf: url) else { return AppPolicies() }
+        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            SupportDirectory.setAside(url)
             return AppPolicies()
+        }
+        var overrides: [String: AppPolicy.Override] = [:]
+        for (id, entry) in object {
+            guard let json = try? JSONSerialization.data(withJSONObject: entry, options: .fragmentsAllowed),
+                  let override = try? JSONDecoder().decode(AppPolicy.Override.self, from: json) else { continue }
+            overrides[id] = override
         }
         return AppPolicies(overrides: overrides)
     }
@@ -203,7 +214,8 @@ public struct AppPolicies: Sendable {
         try encoder.encode(overrides).write(to: url, options: .atomic)
     }
 
-    /// 0.1.9 kept one extra switch key in settings.json (`"switchKey"`), on top of Esc and ⇧Esc.
+    /// Builds between 0.1.8 and 0.1.9 (no release) kept one extra switch key in settings.json
+    /// (`"switchKey"`), on top of Esc and ⇧Esc.
     /// Moves it into the default's `switchKeys` (unless the default names its own) and takes it
     /// out of settings.json. Running it again, or in two processes at once, changes nothing more.
     public static func migrateSwitchKey(settings: URL? = Settings.storeURL, apps: URL? = AppPolicies.storeURL) {
@@ -231,8 +243,10 @@ public struct AppPolicies: Sendable {
         try? out.write(to: settings, options: .atomic)
     }
 
+    /// The exact entry, else the longest prefix that matches (com.jetbrains. over com.).
     private static func lookup<T>(_ id: String, in table: [String: T]) -> T? {
         if let exact = table[id] { return exact }
-        return table.first(where: { $0.key.hasSuffix(".") && id.hasPrefix($0.key) })?.value
+        return table.filter { $0.key.hasSuffix(".") && id.hasPrefix($0.key) }
+            .max { $0.key.count < $1.key.count }?.value
     }
 }

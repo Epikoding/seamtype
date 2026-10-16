@@ -10,19 +10,24 @@ set -euo pipefail
 cd "${0:A:h}"
 mkdir -p data
 
+# Each file appears under its name only once complete: a download or extraction cut short leaves
+# a .part behind, and the next run fetches it again instead of evaluating truncated data.
+fetch() { curl -sSfL -o "$2.part" "$1" && mv "$2.part" "$2"; }
 words=https://raw.githubusercontent.com/hermitdave/FrequencyWords/master/content/2018
-[[ -f data/ko_50k.txt ]] || curl -sSfL -o data/ko_50k.txt $words/ko/ko_50k.txt
-[[ -f data/en_50k.txt ]] || curl -sSfL -o data/en_50k.txt $words/en/en_50k.txt
+[[ -f data/ko_50k.txt ]] || fetch $words/ko/ko_50k.txt data/ko_50k.txt
+[[ -f data/en_50k.txt ]] || fetch $words/en/en_50k.txt data/en_50k.txt
 for lang in jpn kor; do
   if [[ ! -f data/${lang}_sentences.tsv ]]; then
-    curl -sSfL -o data/${lang}_sentences.tsv.bz2 https://downloads.tatoeba.org/exports/per_language/$lang/${lang}_sentences.tsv.bz2
-    bunzip2 -f data/${lang}_sentences.tsv.bz2
+    fetch https://downloads.tatoeba.org/exports/per_language/$lang/${lang}_sentences.tsv.bz2 data/${lang}_sentences.tsv.bz2
+    bunzip2 -c data/${lang}_sentences.tsv.bz2 > data/${lang}_sentences.tsv.part
+    mv data/${lang}_sentences.tsv.part data/${lang}_sentences.tsv && rm data/${lang}_sentences.tsv.bz2
   fi
 done
 
 if [[ ! -d data/scowl ]]; then
-  curl -sSfL -o data/scowl.tar.gz https://downloads.sourceforge.net/project/wordlist/SCOWL/2020.12.07/scowl-2020.12.07.tar.gz
-  mkdir -p data/scowl && tar -xzf data/scowl.tar.gz -C data/scowl --strip-components 1
+  fetch https://downloads.sourceforge.net/project/wordlist/SCOWL/2020.12.07/scowl-2020.12.07.tar.gz data/scowl.tar.gz
+  rm -rf data/scowl.part && mkdir -p data/scowl.part
+  tar -xzf data/scowl.tar.gz -C data/scowl.part --strip-components 1 && mv data/scowl.part data/scowl
 fi
 
 (cd .. && swift build -c release --product seamtype-cli)

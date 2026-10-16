@@ -37,6 +37,10 @@ public struct ParticleSplitter: Sendable {
         public var otherParticle = -4.5
         /// Once per split, for switching language inside a token.
         public var switchCost = 1.0
+        /// Added to a particle of a pair (은/는, 을/를) after an acronym when it is the form the
+        /// acronym's last letter takes (TM은, TV는): after another word either form may follow,
+        /// after an acronym only that one does, so twice as likely (ln 2).
+        public var agreement = 0.7
         /// Per key, the least a Korean word (or a word with a particle) scores.
         public var koreanWordFloor = -1.4
         /// Added per key to the kana reading's score, as `HeuristicEngine.japaneseOffset`.
@@ -84,8 +88,13 @@ public struct ParticleSplitter: Sendable {
         let n = chars.count
         guard n >= 3, !english.isKnownWord(keys) else { return nil }
         var best: (split: Split, score: Double)?
-        func offer(_ split: Split, front: String, particle: Double) {
+        func offer(_ split: Split, front: String, particle: Double, korean: String? = nil) {
             guard let w = frontScore(front) else { return }
+            var particle = particle
+            if let korean, w == weights.acronym,
+               MixedWord.particleAgrees(korean, final: MixedWord.finalSound(ofAcronym: front)) == true {
+                particle += weights.agreement
+            }
             let score = (w + particle - weights.switchCost) / Double(n)
             if best.map({ score > $0.score }) ?? true { best = (split, score) }
         }
@@ -96,7 +105,8 @@ public struct ParticleSplitter: Sendable {
                   MixedWord.suffixes.contains(composed.text) else { continue }
             let front = String(chars[..<start])
             offer(.korean(MixedWord(english: front, koreanKeys: tail, korean: composed.text)), front: front,
-                  particle: Self.coreKorean.contains(composed.text) ? weights.coreParticle : weights.otherParticle)
+                  particle: Self.coreKorean.contains(composed.text) ? weights.coreParticle : weights.otherParticle,
+                  korean: composed.text)
         }
         if japaneseOn, japanese != nil {
             for start in max(2, n - 4)..<n {
@@ -174,12 +184,15 @@ public struct ParticleSplitter: Sendable {
         return score.averageLogProbability + weights.japaneseOffset
     }
 
-    /// 핸들, 소문은, 행하는: a word of the wider vocabulary, or one with a particle or ending.
+    /// 핸들, 소문은, 행하는: a word of the wider vocabulary, or one with a particle or ending in
+    /// the form the word's last syllable takes (씨를, not 씨이 or 씨을).
     func isKoreanWordOrWordWithParticle(_ hangul: String) -> Bool {
         if korean.isVocabularyWord(hangul) { return true }
         let chars = Array(hangul)
         return chars.count > 1 && (1..<chars.count).contains { cut in
-            korean.isVocabularyWord(String(chars[..<cut])) && MixedWord.suffixes.contains(String(chars[cut...]))
+            let particle = String(chars[cut...])
+            return korean.isVocabularyWord(String(chars[..<cut])) && MixedWord.suffixes.contains(particle)
+                && MixedWord.finalSound(of: chars[cut - 1]).flatMap { MixedWord.particleAgrees(particle, final: $0) } != false
         }
     }
 }

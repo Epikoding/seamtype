@@ -69,26 +69,32 @@ enum Uninstaller {
         let ours = sources(installedToo: true).filter { property($0, kTISPropertyBundleID) == SeamtypeSource.id }
 
         let lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
-        for copy in installedCopies {
-            Self.launch(lsregister, ["-u", copy.path])
-            if FileManager.default.isWritableFile(atPath: copy.deletingLastPathComponent().path) {
+        // The one behind the password prompt first, and each copy unregistered only once it is
+        // gone: Cancel there then leaves both copies installed and registered, as they were.
+        let writable = { (copy: URL) in FileManager.default.isWritableFile(atPath: copy.deletingLastPathComponent().path) }
+        for copy in installedCopies.sorted(by: { !writable($0) && writable($1) }) {
+            if writable(copy) {
                 try FileManager.default.removeItem(at: copy)
             } else {
                 try removeAsAdministrator(copy)
             }
+            Self.launch(lsregister, ["-u", copy.path])
         }
 
         if SeamtypeSource.isCurrent, let other = fallbackSource() { TISSelectInputSource(other) }
         for source in ours { TISDisableInputSource(source) }
 
-        if deleteData, let url = SupportDirectory.url, FileManager.default.fileExists(atPath: url.path) {
-            try FileManager.default.removeItem(at: url)
+        // The input method itself: same bundle identifier, any process but this one. Before the
+        // data goes: switched away, it saves its kanji memory, which would bring the folder back.
+        let running = NSRunningApplication.runningApplications(withBundleIdentifier: SeamtypeSource.id)
+            .filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
+        running.forEach { $0.forceTerminate() }
+        for _ in 0..<30 where running.contains(where: { !$0.isTerminated }) {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
         }
 
-        // The input method itself: same bundle identifier, any process but this one.
-        for app in NSRunningApplication.runningApplications(withBundleIdentifier: SeamtypeSource.id)
-        where app.processIdentifier != ProcessInfo.processInfo.processIdentifier {
-            app.forceTerminate()
+        if deleteData, let url = SupportDirectory.url, FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.removeItem(at: url)
         }
         // The input menu and the switch indicator by the caret keep what they read first
         // (the indicator ignores SIGTERM), as scripts/pkg/postinstall does after installing.

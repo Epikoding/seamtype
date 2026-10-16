@@ -100,8 +100,12 @@ func runSettingsApp(tab: SettingsTab) -> Never {
             window.makeKeyAndOrderFront(nil)
         }
     }
-    // The input menu may have changed things while the window was in the background.
+    // The input menu may have changed things while the window was in the background, or in
+    // front: choosing from the menu bar doesn't make the window inactive.
     NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+        MainActor.assumeIsolated { model.reload() }
+    }
+    DistributedNotificationCenter.default().addObserver(forName: SettingsNotice.changedByInputMethod, object: nil, queue: .main) { _ in
         MainActor.assumeIsolated { model.reload() }
     }
     withExtendedLifetime((delegate, window)) { app.run() }
@@ -150,7 +154,8 @@ final class SettingsModel: ObservableObject {
         let language: Language
     }
 
-    @Published var tab: SettingsTab
+    /// Read again on each switch: words learned while trying the typing pane show in Learning.
+    @Published var tab: SettingsTab { didSet { if tab != oldValue { reload() } } }
     @Published private(set) var settings = SeamtypeCore.Settings.load()
     @Published private(set) var defaultPolicy = AppPolicy.standard
     @Published private(set) var apps: [AppRow] = []
@@ -188,8 +193,10 @@ final class SettingsModel: ObservableObject {
 
     // General
 
+    /// Changes one setting in the file as it is now, not in the copy shown: the input menu may
+    /// have changed another one since.
     func set<T>(_ key: WritableKeyPath<SeamtypeCore.Settings, T>, _ value: T) {
-        var new = settings
+        var new = SeamtypeCore.Settings.load()
         new[keyPath: key] = value
         do { try new.save() } catch { NSLog("Seamtype: could not save settings: %@", error.localizedDescription) }
         changed()
@@ -250,12 +257,17 @@ final class SettingsModel: ObservableObject {
 
     // Learning
 
+    // Each starts from lexicon.json as it is now: the input method keeps learning while the
+    // window is open, and writing the window's copy back would undo that.
+
     func forget(_ keys: String) {
+        lexicon.reload()
         lexicon.forget(keys)
         changed()
     }
 
     func forgetAll() {
+        lexicon.reload()
         lexicon.forgetAll()
         changed()
     }

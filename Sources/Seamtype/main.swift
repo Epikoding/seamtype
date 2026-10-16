@@ -69,7 +69,7 @@ if CommandLine.arguments.contains("--selftest") {
         ok = ok && english && korean && lists
         // Must come from the bundle, not the source-tree fallback used in development.
         let resources = [Resources.kanaModel, Resources.textModel, Resources.englishWords, Resources.koreanWords,
-                         Resources.koreanSyllables, Resources.japaneseDictionary]
+                         Resources.koreanSyllables, Resources.koreanVocabulary, Resources.japaneseDictionary]
         let bundled = resources.allSatisfy { $0?.path.hasPrefix(Bundle.main.bundlePath) == true }
         print("resources in bundle: \(bundled ? "ok" : "FAILED")")
         ok = ok && bundled

@@ -68,13 +68,14 @@ final class Runtime {
     /// in System Settings applies without a restart.
     var textReplacements: [String: [String]] { TextReplacements.shared.entries }
 
-    /// Saves a settings change and applies it.
+    /// Saves a settings change and applies it. Starts from the file, not from memory: the
+    /// settings window may have written it a moment ago.
     func update(_ change: (inout Settings) -> Void) {
-        var new = settings
+        var new = Settings.load()
         change(&new)
-        guard new != settings else { return }
         do { try new.save() } catch { NSLog("Seamtype: could not save settings: %@", error.localizedDescription) }
-        apply(new)
+        if new != settings { apply(new) }
+        SettingsNotice.postFromInputMethod()
     }
 
     /// Saves a change to one app's behavior and applies it.
@@ -85,6 +86,7 @@ final class Runtime {
         policies.set(policy, for: app)
         do { try policies.save() } catch { NSLog("Seamtype: could not save apps.json: %@", error.localizedDescription) }
         generation += 1
+        SettingsNotice.postFromInputMethod()
     }
 
     /// Takes the app off the list: it follows the default again.
@@ -93,11 +95,13 @@ final class Runtime {
         policies.overrides[app] = nil
         do { try policies.save() } catch { NSLog("Seamtype: could not save apps.json: %@", error.localizedDescription) }
         generation += 1
+        SettingsNotice.postFromInputMethod()
     }
 
     func undoLastLearned() {
         guard let keys = engine.lastLearned else { return }
         engine.forget(keys)
+        SettingsNotice.postFromInputMethod()
     }
 
     private func apply(_ new: Settings) {
@@ -125,13 +129,22 @@ final class Runtime {
     }
 }
 
-/// Between the settings window (its own process) and the input method.
+/// Between the settings window (its own process) and the input method: each tells the other
+/// it changed the files, under its own name, so neither hears its own.
 enum SettingsNotice {
+    /// From the settings window: the input method reads the files again.
     static let changed = Notification.Name("com.aimdevlee.inputmethod.Seamtype.settingsChanged")
+    /// From the input method (its input menu): an open settings window reads them again.
+    static let changedByInputMethod = Notification.Name("com.aimdevlee.inputmethod.Seamtype.settingsChangedByInputMethod")
     static let kanjiReset = "kanjiReset"
 
     static func post(kanjiReset: Bool = false) {
         DistributedNotificationCenter.default().postNotificationName(
             changed, object: kanjiReset ? Self.kanjiReset : nil, userInfo: nil, deliverImmediately: true)
+    }
+
+    static func postFromInputMethod() {
+        DistributedNotificationCenter.default().postNotificationName(
+            changedByInputMethod, object: nil, userInfo: nil, deliverImmediately: true)
     }
 }

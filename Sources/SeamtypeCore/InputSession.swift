@@ -342,7 +342,7 @@ public final class InputSession {
             }
             // Cycle from what the user sees.
             let shown = forced ?? pinned ?? previewLanguage ?? decide(partial: true).language
-            forced = shown.next(for: keys, japanese: japaneseEnabled)
+            forced = shown.next(for: keys, japanese: japaneseEnabled, splits: engineSplits(keys))
             pinned = nil
             forcedByUser = true
             if forced != .japanese { dropNMarker() }
@@ -619,7 +619,13 @@ public final class InputSession {
         if !(forced == .japanese && forcedByUser), let (word, particle) = segmenter?.englishWithParticle(keys) {
             return word + particle
         }
-        if !partial, let segments = segmenter?.segment(keys) { return JapaneseSegmenter.text(segments) }
+        if !partial {
+            // Letters still waiting for their vowel when the phrase ends go in as shown
+            // (watashihag → わたしはg, not わたしhag); only n becomes ん.
+            let typed = RomajiComposer.compose(keys, partial: true)
+            if typed.strayLetters == 0, !typed.pending.isEmpty { return RomajiComposer.compose(keys, partial: false).text }
+            if let segments = segmenter?.segment(keys) { return JapaneseSegmenter.text(segments) }
+        }
         // While typing, a consonant at the end is just waiting for its vowel (watashihag → わたしはg),
         // not a stray letter to split an English word ("hag") out of.
         if partial, RomajiComposer.compose(keys, partial: true).strayLetters > 0, let segments = segmenter?.segment(keys) {
@@ -664,15 +670,20 @@ public final class InputSession {
     /// What a Japanese phrase commits as without the candidate window: the kana, or with
     /// live conversion the candidate that was on screen (which the converter learns).
     private func committedJapanese() -> String {
-        let kana = japaneseReading(partial: false)
-        guard isLive, let converter, let candidate = liveCandidate(for: kana) else { return kana }
+        let reading = japaneseReading(partial: false)
+        // Letters still waiting for their vowel follow the candidate, as japaneseDisplay shows
+        // them (今日はいい天気でs, not a candidate for the whole reading with the s in it).
+        let pending = RomajiComposer.compose(keys, partial: true).pending
+        let kana = reading.hasSuffix(pending) ? String(reading.dropLast(pending.count)) : reading
+        let letters = String(reading.dropFirst(kana.count))
+        guard isLive, let converter, !kana.isEmpty, let candidate = liveCandidate(for: kana) else { return reading }
         converter.learn(candidate, for: kana)
-        return candidate.text
+        return candidate.text + letters
     }
 
     private func startConversion(_ client: TextClient) {
         var kana = japaneseReading(partial: false)
-        guard let converter, !kana.isEmpty else { return }
+        guard converter != nil, !kana.isEmpty else { return }
         let userForced = forced == .japanese && forcedByUser
         if userForced {
             record(keys, as: .japanese, engineChoice: committedLanguage())
@@ -750,7 +761,7 @@ public final class InputSession {
     /// candidates for exactly that much of the reading, the rest shown as kana. A boundary
     /// never falls inside an English word (google). Nil when it can't move further.
     private func resizeFirstClause(_ conversion: Conversion, by step: Int) -> Conversion? {
-        guard let converter else { return nil }
+        guard converter != nil else { return nil }
         let reading = Array(conversion.kana)
         var length = conversion.current.kanaCount + step
         while (1..<reading.count).contains(length),
@@ -924,7 +935,20 @@ public final class InputSession {
             lastTrace = Trace(keys: keys, previous: previousLanguage, decision: decision, partial: partial)
             return decision
         }
-        let d = engine.decide(keys, context: DecisionContext(previousLanguage: previousLanguage, partial: partial))
+        var d = engine.decide(keys, context: DecisionContext(previousLanguage: previousLanguage, partial: partial))
+        // A word learned as Japanese while Japanese was on: with it off, the engine without what
+        // was learned decides it (sushi stays sushi, not すし). Turned on again, it is learned again.
+        if d.language == .japanese, !japaneseEnabled {
+            d = engine.base.decide(keys, context: DecisionContext(previousLanguage: previousLanguage, partial: partial))
+        }
+        // While typing, a consonant at the end may still be waiting for its vowel, which keeps
+        // Japanese close and a Korean word under a Strict app's threshold until the word ends
+        // (qud: 0.60 while typed, 0.98 at Space). The word as it would go in now decides, so the
+        // preview shows what Space commits (병), not English that turns Korean on Space.
+        if partial, d.language == .korean, d.confidence < policy.conversionThreshold {
+            let now = engine.decide(keys, context: DecisionContext(previousLanguage: previousLanguage, partial: false))
+            if now.language == .korean, now.confidence >= policy.conversionThreshold { d = now }
+        }
         let kept = d.language != .english && d.confidence < policy.conversionThreshold
         keptEnglishByStrict = kept && policy.conversionThreshold >= AppPolicy.strictThreshold && keys.count <= 3
         let decision = kept
@@ -957,12 +981,12 @@ public final class InputSession {
     private func committedLanguage() -> Language {
         let d = decide(partial: false)
         guard let shown = enginePreview, shown != d.language else { return d.language }
-        // Kanji on screen (live conversion): Space converts them, unless the keys are an English
+        // Japanese on screen, kana or kanji: Space converts it, unless the keys are an English
         // word. A short word reads as the start of a longer Japanese one while typed and as
-        // English once it ends (zi showed 地, then went in as "zi"). Kana alone keep the usual rule.
-        if shown == .japanese, d.language == .english, isLive, !keptEnglishByStrict,
-           !EnglishModel.shared.isKnownWord(keys), RomajiComposer.compose(keys).isClean,
-           liveCandidate(for: japaneseReading(partial: false)) != nil {
+        // English once it ends (zi showed 地 and zio じお, then went in as "zi", "zio"), and a
+        // Strict app's short token kept English would go in as letters under its kana (ka under か).
+        if shown == .japanese, d.language == .english,
+           !EnglishModel.shared.isKnownWord(keys), RomajiComposer.compose(keys).isClean {
             return shown
         }
         return isWeakFlipAllowed(to: d, from: shown) ? d.language : shown
@@ -1110,7 +1134,10 @@ public final class InputSession {
         case .mixed:
             let text = engine.render(keys, as: .mixed)
             return text == keys ? nil : text
-        case .japanese: return japaneseEnabled ? japaneseReading(partial: true) : nil
+        case .japanese:
+            // Only っ and letters (ss: っs) is no Japanese word, so it isn't a reading to hold on to.
+            guard japaneseEnabled else { return nil }
+            return RomajiComposer.compose(keys, partial: true).isOnlySokuon ? nil : japaneseReading(partial: true)
         }
     }
 
@@ -1221,13 +1248,19 @@ public final class InputSession {
 
     /// Replaces a just-committed word with its next rendering, but only if the caret
     /// still sits right after it and the text there is what we inserted.
+    /// Whether the keys have a split reading to cycle to: the engine's (x에, hello월드), which the
+    /// particle split alone doesn't find.
+    private func engineSplits(_ keys: String) -> Bool {
+        engine.render(keys, as: .mixed) != keys
+    }
+
     private func cycle(_ commit: Committed, client: TextClient) -> Committed? {
         let range = NSRange(location: commit.location, length: (commit.text as NSString).length)
         let cursor = client.selectedRange()
         guard cursor.location != NSNotFound, cursor.length == 0, cursor.location == NSMaxRange(range),
               client.text(in: range) == commit.text else { return nil }
 
-        let language = commit.language.next(for: commit.keys, japanese: japaneseEnabled)
+        let language = commit.language.next(for: commit.keys, japanese: japaneseEnabled, splits: engineSplits(commit.keys))
         let reading = language == .japanese ? JapaneseSegmenter.reading(of: commit.keys, segmenter: segmenter)
                                             : engine.render(commit.keys, as: language)
         let text = reading + commit.boundary

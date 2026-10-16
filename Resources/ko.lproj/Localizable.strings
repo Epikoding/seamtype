@@ -185,7 +185,6 @@
 "Tap the right ⇧ on its own. Apps ignore it, so nothing else happens." = "오른쪽 ⇧만 눌렀다 뗍니다. 앱은 이 키를 무시하므로 다른 일이 생기지 않습니다.";
 "Tap the right ⌥ on its own. Apps ignore it, so nothing else happens." = "오른쪽 ⌥만 눌렀다 뗍니다. 앱은 이 키를 무시하므로 다른 일이 생기지 않습니다.";
 "Which key to choose" = "어떤 키를 고를까";
-"While typing, or right after the word. Choose as many as you like." = "치는 중이나 확정 직후에. 여러 개를 골라도 됩니다.";
 "With nothing to change, it does nothing." = "바꿀 단어가 없으면 아무 일도 하지 않습니다.";
 "right %@" = "오른쪽 %@";
 "right, alone" = "오른쪽 단독";

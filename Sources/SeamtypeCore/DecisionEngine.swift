@@ -20,14 +20,15 @@ public enum Language: String, Codable, Sendable {
     /// What Esc switches to: english → mixed (when the keys split) → korean →
     /// japanese (when enabled) → english. Readings that can't exist for these keys
     /// are skipped (no Korean for "ra-men"), and so are garbled ones (dkssud as
-    /// Japanese: dkっすd) as long as a clean alternative exists — a typo can still
-    /// be forced into its language when nothing reads cleanly.
-    public func next(for keys: String, japanese: Bool = false) -> Language {
+    /// Japanese: dkっすd; loose consonants and ㅜ/ㅠ such as ㅁㅊ or ㅜㅜ aren't garbled) as long as a clean alternative exists — a typo can still
+    /// be forced into its language when nothing reads cleanly. `splits`: whether the engine
+    /// splits the keys (x에, hello월드 as well as github에); left out, the particle split decides.
+    public func next(for keys: String, japanese: Bool = false, splits: Bool? = nil) -> Language {
         let order: [Language] = [.english, .mixed, .korean, .japanese]
         let available = order.filter { language in
             switch language {
             case .english: return true
-            case .mixed: return MixedWord.split(keys) != nil
+            case .mixed: return splits ?? (MixedWord.split(keys) != nil)
             case .korean: return HangulComposer.compose(keys: keys) != nil
             case .japanese: return japanese
             }
@@ -35,7 +36,7 @@ public enum Language: String, Codable, Sendable {
         let clean = available.filter { language in
             switch language {
             case .english, .mixed: return true
-            case .korean: return HangulComposer.compose(keys: keys)?.strayJamo.isEmpty == true
+            case .korean: return HangulComposer.compose(keys: keys).map { $0.strayJamo.isEmpty || $0.isJamoAbbreviation } == true
             case .japanese: return RomajiComposer.compose(keys).strayLetters == 0
             }
         }
@@ -130,6 +131,10 @@ public final class HeuristicEngine: DecisionEngine, @unchecked Sendable {
     public var switchBiasFactor = 0.25
     /// Score floors for a Korean word seen in real text (two or more syllables, one), the
     /// counterpart of the English dictionary floor: 내가, 무슨 stay Korean after English.
+    /// A word only in the wider vocabulary (닥터, 했죠: too rare for Tatoeba's sentences), or a
+    /// noun the lists have only with a particle (혜택), gets the long floor too, unless the keys
+    /// are an English word: that list comes from subtitles, and work (재가) or ahem (모드) must
+    /// stay English.
     public var koreanKnownFloor = (long: -1.4, short: -2.0)
     /// How far Japanese must lead before a known English word is turned into kana
     /// outside Japanese text.
@@ -146,8 +151,10 @@ public final class HeuristicEngine: DecisionEngine, @unchecked Sendable {
     }
 
     public func decide(_ keys: String, context: DecisionContext) -> Decision {
-        // Shift on a key that has no shifted jamo (e.g. "Hello", "API") is only ever English.
-        if keys.contains(where: { $0.isUppercase && !DubeolsikLayout.isKoreanShiftKey($0) }) {
+        // Shift on a key that has no shifted jamo (e.g. "Hello", "API") is only ever English,
+        // unless it lingers from a Korean shift key onto the next key (djEJs 어떤, dPFmf 예를):
+        // then the scores decide.
+        if DubeolsikLayout.hasEnglishOnlyCapital(keys) {
             return Decision(language: .english, confidence: 0.99, output: keys, explanation: "uppercase outside QWERTOP")
         }
 
@@ -167,14 +174,22 @@ public final class HeuristicEngine: DecisionEngine, @unchecked Sendable {
         if keys.contains(where: { !$0.isLetter }) { e -= 3 } // "ra-men", "kan'i" aren't English
 
         var k = korean.score(keys: keys, partial: context.partial)
-        let knownKorean = k.map { $0.composition.strayJamo.isEmpty && korean.isKnownWord($0.composition.text) } ?? false
+        let knownKorean = k.map {
+            $0.composition.strayJamo.isEmpty && (korean.isKnownWord($0.composition.text)
+                || (!known && (korean.isVocabularyWord($0.composition.text) || korean.isKnownStem($0.composition.text))))
+        } ?? false
         if let score = k, knownKorean {
             let floor = score.composition.syllables.count >= 2 ? koreanKnownFloor.long : koreanKnownFloor.short
             k = KoreanModel.Score(averageLogProbability: max(score.averageLogProbability, floor), composition: score.composition)
         }
-        // A dictionary English word may already be complete: score its Japanese reading as
-        // finished too, so the preview shows what Space will commit ("to" stays to, not と).
-        let j = japanese?.score(keys: keys, partial: context.partial && !known)
+        // A dictionary English word may already be complete, and so are chat jamo (ㅜㅜ): score
+        // the Japanese reading as finished too, so the preview shows what Space will commit
+        // ("to" stays to, not と; nn shows ㅜㅜ, not ん that Space turned into ㅜㅜ). So is a
+        // doubled consonant with nothing after its っ (ff, ww): no Japanese word is only っ, so
+        // it isn't one on its way (ff showed っf and went in as ff); って (tte) still is.
+        let chat = k?.composition.isChat == true
+        let sokuonFirst = RomajiComposer.compose(keys, partial: true).isOnlySokuon
+        let j = japanese?.score(keys: keys, partial: context.partial && !known && !chat && !sokuonFirst)
         // English words inside a Japanese phrase (googlede…) score as segmented Japanese,
         // not as kana with stray letters.
         var segmented: (segments: [JapaneseSegmenter.Segment], score: Double)?
@@ -250,11 +265,7 @@ public final class LearningEngine: DecisionEngine, @unchecked Sendable {
         let data = storeURL.flatMap { try? Data(contentsOf: $0) }
         if let data, let saved = try? JSONDecoder().decode(Store.self, from: data) { return saved }
         // Unreadable (hand-edited, or from a newer version): keep it aside, don't overwrite it.
-        if data != nil, let url = storeURL {
-            let aside = url.appendingPathExtension("unreadable")
-            try? FileManager.default.removeItem(at: aside)
-            try? FileManager.default.moveItem(at: url, to: aside)
-        }
+        if data != nil, let url = storeURL { SupportDirectory.setAside(url) }
         return Store()
     }
 

@@ -54,6 +54,19 @@ import Testing
         #expect(field.text == "きょうはいいてんk")
     }
 
+    /// Return commits what was shown: letters waiting for their vowel stay letters rather than
+    /// splitting an English word out of the phrase (わたしhag), and only n becomes ん.
+    @Test func returnCommitsPendingLettersAsShown() {
+        for (keys, shown, committed) in [("watashihag", "わたしはg", "わたしはg"), ("kyouhaiitenkides", "きょうはいいてんきでs", "きょうはいいてんきでs"),
+                                         ("nagaremasen", "ながれませn", "ながれません")] {
+            type(keys)
+            #expect(field.text.hasSuffix(shown), "\(keys): \(field.text)")
+            #expect(session.handle(.enter, client: field))
+            #expect(field.text.hasSuffix(committed), "\(keys): \(field.text)")
+            type(" ")
+        }
+    }
+
     @Test func spaceConvertsAndReturnCommits() {
         type("kyouhaiitenkidesune ")
         #expect(session.conversion != nil)
@@ -62,6 +75,18 @@ import Testing
         #expect(field.text == "今日はいい天気ですね")
         #expect(session.conversion == nil)
         #expect(converter.learned == ["今日はいい天気ですね"])
+    }
+
+    /// A short word shown as kana converts on Space, though once it ends it reads as English
+    /// (zio showed じお, then went in as "zio"); an English word still goes in as typed.
+    @Test func spaceConvertsAShortWordShownAsKana() {
+        type("zio")
+        #expect(field.text == "じお")
+        type(" ")
+        #expect(session.conversion != nil)
+        #expect(session.handle(.enter, client: field))
+        type("taco ")
+        #expect(field.text == "じおtaco ")
     }
 
     @Test func spaceCyclesCandidatesAndNumbersPick() {
@@ -399,6 +424,110 @@ import Testing
         #expect(InputSession.keys("kyouhaiitenki", after: 4) == "iitenki")
         #expect(InputSession.keys("kitte", after: 2) == "te")
         #expect(InputSession.keys("konnichiha", after: 2) == "nichiha")
+    }
+}
+
+/// nn is ㅜㅜ in Korean chat and ん in Japanese: the preview shows what Space commits (it showed
+/// ん and went in as ㅜㅜ), the sentence decides which, and the switch key reaches both.
+@MainActor @Suite struct ChatJamoTests {
+    let field = FakeTextField()
+    let session: InputSession
+
+    init() {
+        let lex = FileManager.default.temporaryDirectory.appendingPathComponent("seamtype-cj-\(UUID().uuidString).json")
+        let engine = LearningEngine(base: SplittingEngine(base: trilingual, english: trilingual.english, japanese: trilingual.segmenter), storeURL: lex)
+        session = InputSession(engine: engine, policies: .escSwitches, japaneseEnabled: true)
+    }
+
+    func type(_ s: String) {
+        for ch in s {
+            switch ch {
+            case "⎋": _ = session.handle(.escape, client: field)
+            case let c where c.isLetter: _ = session.handle(.letter(c), client: field)
+            default: if !session.handle(.printable(ch), client: field) { field.insertText(String(ch), replacing: nil) }
+            }
+        }
+    }
+
+    @Test func showsWhatSpaceCommits() {
+        type("nn")
+        #expect(field.text == "ㅜㅜ")
+        type(" ")
+        #expect(field.text == "ㅜㅜ ")
+        type("sugoi nn")
+        #expect(field.text.hasSuffix("すごい ん"))
+        type(" ")
+        #expect(field.text.hasSuffix("すごい ん "))
+    }
+
+    /// A doubled consonant with nothing after its っ isn't Japanese on its way: ff showed っf
+    /// and went in as ff, ss showed っs and went in as っs. って (tte) is still Japanese.
+    @Test(arguments: [("ff", "ff"), ("ww", "ww"), ("ss", "ss"), ("xxx", "xxx"), ("zz", "ㅋㅋ"), ("ttedokoni", "ってどこに")])
+    func doubledConsonantShowsWhatItCommits(keys: String, word: String) {
+        type(keys)
+        #expect(field.text == word)
+        type(" ")
+        #expect(field.text == word + " ")
+    }
+
+    @Test func switchKeyReachesTheChatReading() {
+        type("nn⎋⎋⎋")
+        #expect(field.text == "ㅜㅜ")
+        type(" ⎋")
+        #expect(field.text == "ん ")
+        type("⎋⎋")
+        #expect(field.text == "ㅜㅜ ")
+    }
+}
+
+/// A word learned as Japanese types as Japanese only while Japanese is on.
+@MainActor @Suite struct LearnedJapaneseTests {
+    @Test(arguments: [(true, "すし "), (false, "sushi ")])
+    func followsTheJapaneseSetting(japanese: Bool, typed: String) {
+        let lex = FileManager.default.temporaryDirectory.appendingPathComponent("seamtype-lj-\(UUID().uuidString).json")
+        let engine = LearningEngine(base: japanese ? SplittingEngine(base: trilingual, english: trilingual.english, japanese: trilingual.segmenter)
+                                                   : splitting, storeURL: lex)
+        engine.learn("sushi", as: .japanese, engineChoice: .english)
+        engine.learn("sushi", as: .japanese, engineChoice: .english)
+        let session = InputSession(engine: engine, japaneseEnabled: japanese)
+        let field = FakeTextField()
+        for ch in "sushi " {
+            if !(ch.isLetter ? session.handle(.letter(ch), client: field) : session.handle(.printable(ch), client: field)) {
+                field.insertText(String(ch), replacing: nil)
+            }
+        }
+        #expect(field.text == typed)
+    }
+}
+
+/// A Strict app with Japanese on: a consonant at the end, still waiting for its vowel while
+/// typed, kept a Korean word under the threshold on screen, and Space then committed it as
+/// Korean (qud showed qud and went in as 병).
+@MainActor @Suite struct StrictJapaneseTests {
+    @Test(arguments: [("qud", "병"), ("eho", "돼"), ("ajanf", "머물")])
+    func koreanWordShowsWhatItCommits(keys: String, word: String) {
+        let lex = FileManager.default.temporaryDirectory.appendingPathComponent("seamtype-sj-\(UUID().uuidString).json")
+        let engine = LearningEngine(base: SplittingEngine(base: trilingual, english: trilingual.english, japanese: trilingual.segmenter), storeURL: lex)
+        let session = InputSession(engine: engine, policies: AppPolicies(overrides: [AppPolicies.defaultKey: .init(conversionThreshold: AppPolicy.strictThreshold)]),
+                                   converter: FakeConverter(), japaneseEnabled: true)
+        let field = FakeTextField()
+        for ch in keys { _ = session.handle(.letter(ch), client: field) }
+        #expect(field.text == word)
+        #expect(session.handle(.enter, client: field))
+        #expect(field.text == word)
+    }
+
+    /// A short token the threshold keeps English still converts when its kana are on screen.
+    @Test func spaceConvertsAShortTokenShownAsKana() {
+        let lex = FileManager.default.temporaryDirectory.appendingPathComponent("seamtype-sj-\(UUID().uuidString).json")
+        let engine = LearningEngine(base: SplittingEngine(base: trilingual, english: trilingual.english, japanese: trilingual.segmenter), storeURL: lex)
+        let session = InputSession(engine: engine, policies: AppPolicies(overrides: [AppPolicies.defaultKey: .init(conversionThreshold: AppPolicy.strictThreshold)]),
+                                   converter: FakeConverter(), japaneseEnabled: true)
+        let field = FakeTextField()
+        for ch in "ka" { _ = session.handle(.letter(ch), client: field) }
+        #expect(field.text == "か")
+        #expect(session.handle(.printable(" "), client: field))
+        #expect(session.conversion != nil)
     }
 }
 

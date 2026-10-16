@@ -43,7 +43,7 @@ is a thin IMK layer over it. `seamtype-cli` is for tuning and evaluation.
 made twice wins) → `SplittingEngine` (`MixedWord.swift`) → `HeuristicEngine`.
 - `SplittingEngine` handles English + Korean particle (`github에`), a single letter + particle
   (`xdp` → `x에`, not 도/나 after a lowercase letter), English + whole Korean word (`hello월드`,
-  using `Data/korean_vocabulary.txt`, which is only for this) and English + Japanese particle
+  using `Data/korean_vocabulary.txt`, which `HeuristicEngine` also uses for its Korean word floor) and English + Japanese particle
   (`githubで`). Its decisions have confidence 0.98 (`SplittingEngine.confidence`), above Strict
   (0.97), so they split in a strict app too.
 - English + particle, Korean or Japanese, is decided by `ParticleSplitter`: the split is one more
@@ -72,9 +72,9 @@ tests use `FakeTextField`). It owns the preview and hysteresis, commits, Esc rea
 - The keys that switch a word's reading are per app (`AppPolicy.switchKeys`; default right ⌥ tap
   and ⇧Esc). `InputController` turns a chosen tap, ⌥Space or ⇧Esc into `.cycle`, and only a chosen
   one; an unchosen Esc or ⇧Esc commits and goes to the app. Esc still goes back to the kana in the
-  candidate window and with live conversion. `AppPolicies.migrateSwitchKey` moves 0.1.9's
-  `switchKey` (settings.json) into `"*"`; an entry's old `escapeToApp` still applies until
-  the entry names its own `switchKeys`.
+  candidate window and with live conversion. `AppPolicies.migrateSwitchKey` moves the
+  `switchKey` of builds between 0.1.8 and 0.1.9 (settings.json, never released) into `"*"`; an
+  entry's `escapeToApp` (0.1.8 and earlier) still applies until the entry names its own `switchKeys`.
 - Return on an underlined word only confirms it (`returnConfirmsOnly`, on by default); off, the
   app gets the Return too, except after Japanese.
 - Vim reports its modes through `scripts/vim/seamtype.{lua,vim}` (`Seamtype --vim <mode> --app
@@ -177,7 +177,9 @@ runtime.
   - 설명: About cuts it at two lines (about 70–80 Korean characters), so the first sentence says
     what changed; examples, exceptions and setting keys come after it.
   - What a user notices, not how it was built; a fix says what works now. 3–5 items, biggest first.
-  `SEAMTYPE_ZIP=build/release/Seamtype.zip sh scripts/get.sh` tries the zip locally. The pkg installs
+  `SEAMTYPE_ZIP=build/release/Seamtype.zip sh scripts/get.sh` tries the zip locally (get.sh runs
+  nothing from a zip whose app isn't Developer ID signed by team 2UZ65T3U82 and notarized; an ad hoc
+  build needs `SEAMTYPE_UNSIGNED=1`). The pkg installs
   into `/Library/Input Methods` and is not relocatable. Its payload lands in
   `/Library/Application Support/Seamtype/Install` and the postinstall rsyncs it into the existing
   bundle: a bundle PackageKit swaps for a new folder leaves imklaunchagent failing to launch it

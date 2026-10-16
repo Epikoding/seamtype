@@ -319,7 +319,8 @@ final class InputController: IMKInputController {
             // conversion and, under it, what only matters while it is on. The names are the
             // settings window's, so a choice reads the same in both.
             add(runtime.settings.rightCommandPause ? L("Pause in This Text Field (right ⌘)") : L("Pause in This Text Field"),
-                #selector(togglePause(_:)), on: current?.session.paused ?? false)
+                // A session from before a settings change is replaced, unpaused, on the next key.
+                #selector(togglePause(_:)), on: current.map { $0.generation == runtime.generation && $0.session.paused } ?? false)
             menu.addItem(.separator())
             if let app = current?.session.app ?? client()?.bundleIdentifier() {
                 let policies = AppPolicies.load()
