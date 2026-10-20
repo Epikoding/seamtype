@@ -115,6 +115,8 @@ public final class InputSession {
     /// one now shown: what the input method lists under the caret.
     public struct Readings: Equatable {
         public let texts: [String]
+        /// Each reading's language, for its tag in the list.
+        public let languages: [Language]
         public let selected: Int
     }
 
@@ -1227,7 +1229,7 @@ public final class InputSession {
                           rendered: (String, Language) -> String) -> Readings? {
         let cycle = language.cycle(for: keys, japanese: japaneseEnabled, splits: engineSplits(keys))
         guard cycle.count > 1, let selected = cycle.firstIndex(of: language) else { return nil }
-        return Readings(texts: cycle.map { rendered(keys, $0) }, selected: selected)
+        return Readings(texts: cycle.map { rendered(keys, $0) }, languages: cycle, selected: selected)
     }
 
     /// The word being composed as the marked text, with its boundary while it is held.

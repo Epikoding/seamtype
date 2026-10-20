@@ -226,9 +226,10 @@ Choose the keys that switch readings in the settings window's **Keys** pane, key
 right ⌥ tapped alone, ⌥Space, right ⇧ tapped alone, Esc and ⇧Esc, as many as you like. By default
 they are **right ⌥ tapped alone** and **⇧Esc**. A key not chosen goes to the app.
 
-Pressing one lists the word's readings under it in order (`dkssud · 안녕`, `githubdp · github에`), the one on
-screen highlighted, so you see how many more presses reach the one you want; any other key puts
-the list away.
+Pressing one drops the word's readings under it in order, each with its language (EN, KO, JA), the
+one on screen highlighted, so you see how many more presses reach the one you want; any other key
+puts the list away at once. The motion is over within 0.2 s, and there is none with Reduce motion
+on in System Settings.
 
 - **Right ⌥ or right ⇧ tapped alone**: apps don't react to a lone modifier, so it never closes a
   window or clears input. A tap with other modifiers isn't taken, so a key remapped as a Hyper key
@@ -256,7 +257,7 @@ doesn't, so a stray switch doesn't do much. It is forgotten after 30 days unless
 that way again. Correct the same keys the same way a second time and Araso always writes them so, also with a
 particle after them (remember `ghostty` and you get `ghostty에`);
 switching a word back to Araso's own guess forgets it. When a word sticks, `안녕 → always Korean`
-shows under the caret for a moment; if that was a mistake, choose **Undo Last Learned** in the
+shows under the caret for a moment, Araso's mark spinning through A, 아 and あ to stop on that language; if that was a mistake, choose **Undo Last Learned** in the
 input menu. Long tokens (over 20 keys, such as a
 sentence switched as one) aren't remembered.
 
