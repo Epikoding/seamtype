@@ -24,6 +24,14 @@ public enum Language: String, Codable, Sendable {
     /// be forced into its language when nothing reads cleanly. `splits`: whether the engine
     /// splits the keys (x에, hello월드 as well as github에); left out, the particle split decides.
     public func next(for keys: String, japanese: Bool = false, splits: Bool? = nil) -> Language {
+        let cycle = cycle(for: keys, japanese: japanese, splits: splits)
+        guard let index = cycle.firstIndex(of: self) else { return cycle.first ?? .english }
+        return cycle[(index + 1) % cycle.count]
+    }
+
+    /// The readings `next` goes through for these keys, in order (this one among them, even
+    /// when garbled, so it can be cycled away from).
+    public func cycle(for keys: String, japanese: Bool = false, splits: Bool? = nil) -> [Language] {
         let order: [Language] = [.english, .mixed, .korean, .japanese]
         let available = order.filter { language in
             switch language {
@@ -40,9 +48,7 @@ public enum Language: String, Codable, Sendable {
             case .japanese: return RomajiComposer.compose(keys).strayLetters == 0
             }
         }
-        let cycle = clean.count >= 2 ? available.filter { clean.contains($0) || $0 == self } : available
-        guard let index = cycle.firstIndex(of: self) else { return cycle.first ?? .english }
-        return cycle[(index + 1) % cycle.count]
+        return clean.count >= 2 ? available.filter { clean.contains($0) || $0 == self } : available
     }
 }
 

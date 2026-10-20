@@ -40,7 +40,8 @@ import Cocoa
         imageView.image = paused ? icons.paused : icons.on
         imageView.setAccessibilityLabel(paused ? L("Araso paused") : L("Araso resumed"))
         panel.contentView?.layer?.backgroundColor = fill
-        panel.setFrame(NSRect(origin: origin(caret: caret), size: size), display: true)
+        panel.setFrame(NSRect(origin: CaretPanel.origin(for: size, caret: caret, gap: gap, centered: true), size: size),
+                       display: true)
         panel.alphaValue = 1
         panel.orderFrontRegardless()
 
@@ -54,34 +55,9 @@ import Cocoa
         }
     }
 
-    /// Centered just under the caret's line (above it near the bottom of the screen), kept on
-    /// screen. Without a caret, near the top of the screen the mouse is on.
-    private static func origin(caret: NSRect) -> NSPoint {
-        let anchor = caret == .zero ? NSEvent.mouseLocation : caret.origin
-        let screen = NSScreen.screens.first { $0.frame.contains(anchor) } ?? NSScreen.main
-        guard let visible = screen?.visibleFrame else { return anchor }
-        var point: NSPoint
-        if caret == .zero {
-            point = NSPoint(x: visible.midX - size.width / 2, y: visible.maxY - size.height - 40)
-        } else {
-            point = NSPoint(x: caret.midX.rounded() - size.width / 2, y: caret.minY - gap - size.height)
-            if point.y < visible.minY { point.y = caret.maxY + gap }
-        }
-        point.x = min(max(point.x, visible.minX), visible.maxX - size.width)
-        point.y = min(max(point.y, visible.minY), visible.maxY - size.height)
-        return point
-    }
-
     private static func make() -> (NSPanel, NSImageView) {
         if let panel, let imageView { return (panel, imageView) }
-        let panel = NSPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel],
-                            backing: .buffered, defer: true)
-        panel.level = .popUpMenu
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.ignoresMouseEvents = true
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
+        let panel = CaretPanel.make(size: size)
 
         let capsule = NSView()
         capsule.wantsLayer = true

@@ -100,6 +100,22 @@ final class FakeTextField: TextClient {
         #expect(field.text == "hello hello ")
     }
 
+    /// A switch key lists the word's readings, the one now shown selected, while it is being
+    /// typed and right after it went in; the next key puts the list away.
+    @Test func switchKeyListsTheReadings() {
+        type("dkssud")
+        #expect(session.readings == nil)
+        session.handle(.escape, client: field)
+        #expect(session.readings == InputSession.Readings(texts: ["dkssud", "안녕"], selected: 0))
+        type(" ")
+        #expect(session.readings == nil)
+        session.handle(.escape, client: field)
+        #expect(field.text == "안녕 ")
+        #expect(session.readings == InputSession.Readings(texts: ["dkssud", "안녕"], selected: 1))
+        type("a")
+        #expect(session.readings == nil)
+    }
+
     /// One Esc changes only that word (a habitual Esc shouldn't stick); the same
     /// correction a second time is remembered.
     @Test func flippedChoiceIsRememberedTheSecondTime() {

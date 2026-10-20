@@ -111,6 +111,13 @@ public final class InputSession {
         public var selectedClause: NSRange { NSRange(location: 0, length: (current.text as NSString).length) }
     }
 
+    /// The readings a switch key goes through for the word it just changed, in order, and the
+    /// one now shown: what the input method lists under the caret.
+    public struct Readings: Equatable {
+        public let texts: [String]
+        public let selected: Int
+    }
+
     private struct Committed {
         let keys: String
         /// What Araso chose before any Esc.
@@ -141,6 +148,9 @@ public final class InputSession {
     public private(set) var app: String?
     public private(set) var policy = AppPolicy.standard
     public private(set) var conversion: Conversion?
+    /// Set by a switch key that changed a word (being typed or just committed), cleared by the
+    /// next key: the readings to list while the user picks one.
+    public private(set) var readings: Readings?
     private let policies: AppPolicies
     private var forced: Language?
     /// Whether `forced` is the user's choice (Esc) rather than "back to kana" after converting
@@ -261,6 +271,7 @@ public final class InputSession {
 
     /// Returns true when the key was consumed.
     public func handle(_ key: Key, client: TextClient) -> Bool {
+        readings = nil
         guard policy.enabled, !paused else { return false }
         if vimMode == .normal {
             // Vim's normal mode: every key is a command. ⇧Esc is the way out if vim's last word
@@ -304,6 +315,7 @@ public final class InputSession {
         if switchesLanguage, keys.isEmpty, let pending {
             if let changed = cycle(pending, client: client) {
                 lastCommit = changed
+                readings = readings(of: changed.keys, as: changed.language, rendered: committedReading)
                 return true
             }
         }
@@ -388,11 +400,13 @@ public final class InputSession {
             }
             // Cycle from what the user sees.
             let shown = forced ?? pinned ?? previewLanguage ?? decide(partial: true).language
-            forced = shown.next(for: keys, japanese: japaneseEnabled, splits: engineSplits(keys))
+            let next = shown.next(for: keys, japanese: japaneseEnabled, splits: engineSplits(keys))
+            forced = next
             pinned = nil
             forcedByUser = true
-            if forced != .japanese { dropNMarker() }
+            if next != .japanese { dropNMarker() }
             updatePreview(client)
+            readings = readings(of: keys, as: next) { _, language in self.rendering(as: language) }
             return true
 
         case .printable(let ch):
@@ -1164,8 +1178,7 @@ public final class InputSession {
             client.setMarkedText("")
         } else if let forced = forced ?? pinned {
             previewLanguage = forced
-            show(forced == .japanese ? japaneseDisplay()
-                 : forced == .korean ? hangul() ?? keys : engine.render(keys, as: forced), client)
+            show(rendering(as: forced), client)
         } else {
             if !inURLRun {
                 splitOffKoreanBeforeOther(client)
@@ -1182,6 +1195,29 @@ public final class InputSession {
             enginePreview = language
             show(language == .japanese ? japaneseDisplay() : preview(as: language) ?? keys, client)
         }
+    }
+
+    /// The word being typed as a reading the user chose (a switch key) shows it.
+    private func rendering(as language: Language) -> String {
+        switch language {
+        case .japanese: return japaneseDisplay()
+        case .korean: return hangul() ?? keys
+        default: return engine.render(keys, as: language)
+        }
+    }
+
+    /// A committed word's keys as they go in when cycled to `language`.
+    private func committedReading(_ keys: String, as language: Language) -> String {
+        language == .japanese ? JapaneseSegmenter.reading(of: keys, segmenter: segmenter) : engine.render(keys, as: language)
+    }
+
+    /// The switch key's readings for `keys`, `language` selected; nil when there is nothing to
+    /// choose between.
+    private func readings(of keys: String, as language: Language,
+                          rendered: (String, Language) -> String) -> Readings? {
+        let cycle = language.cycle(for: keys, japanese: japaneseEnabled, splits: engineSplits(keys))
+        guard cycle.count > 1, let selected = cycle.firstIndex(of: language) else { return nil }
+        return Readings(texts: cycle.map { rendered(keys, $0) }, selected: selected)
     }
 
     /// The word being composed as the marked text, with its boundary while it is held.
@@ -1422,9 +1458,7 @@ public final class InputSession {
               client.text(in: range) == commit.text else { return nil }
 
         let language = commit.language.next(for: commit.keys, japanese: japaneseEnabled, splits: engineSplits(commit.keys))
-        let reading = language == .japanese ? JapaneseSegmenter.reading(of: commit.keys, segmenter: segmenter)
-                                            : engine.render(commit.keys, as: language)
-        let text = reading + commit.boundary
+        let text = committedReading(commit.keys, as: language) + commit.boundary
         client.insertText(text, replacing: range)
         if runText.hasSuffix(commit.text) { runText = String(runText.dropLast(commit.text.count)) + text }
         previousLanguage = language.sentenceLanguage

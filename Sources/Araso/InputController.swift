@@ -80,6 +80,7 @@ final class InputController: IMKInputController {
         MainActor.assumeIsolated {
             session.commit(client: textInput(sender).map(textClient))
             candidatesWindow?.hide()
+            ReadingsHUD.hide()
             Runtime.shared.converter?.save()
         }
         super.deactivateServer(sender)
@@ -89,6 +90,7 @@ final class InputController: IMKInputController {
         MainActor.assumeIsolated {
             session.commitForNewContext(client: textInput(sender).map(textClient))
             candidatesWindow?.hide()
+            ReadingsHUD.hide()
         }
     }
 
@@ -138,6 +140,7 @@ final class InputController: IMKInputController {
             let key = key(for: event)
             let handled = session.handle(key, client: textClient(input))
             syncCandidates()
+            syncReadings(input)
             // The settings window's typing test shows how each word was decided; only there.
             if session.app == Bundle.main.bundleIdentifier, let trace = session.lastTrace {
                 TypingTrace(trace).post()
@@ -210,12 +213,19 @@ final class InputController: IMKInputController {
         guard !session.inVimNormalMode else { return } // vim's own keys
         let handled = session.handle(.cycle, client: textClient(client))
         syncCandidates()
+        syncReadings(client)
         log.debug("handle switchTap handled=\(handled) app=\(self.session.app ?? "?", privacy: .public)")
+    }
+
+    /// The readings a switch key just went through, under the word; put away on any other key.
+    @MainActor private func syncReadings(_ client: IMKTextInput) {
+        if let readings = session.readings { ReadingsHUD.show(readings, caret: caretRect(client)) } else { ReadingsHUD.hide() }
     }
 
     /// Pauses or resumes this text field, and says so under the caret.
     @MainActor private func togglePause(client: IMKTextInput?) {
         session.togglePause(client: client.map(textClient))
+        ReadingsHUD.hide()
         PauseHUD.show(paused: session.paused, caret: client.map(caretRect) ?? .zero)
         log.info("paused=\(self.session.paused) app=\(self.session.app ?? "?", privacy: .public)")
     }
