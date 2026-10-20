@@ -262,3 +262,5 @@
 "JA" = "日";
 "MIX" = "섞음";
 "Remembered" = "기억한 읽기";
+"Changed by the Dictionary" = "사전이 바꾼 단어";
+"%@ → %@ · Forget" = "%@ → %@ · 잊기";

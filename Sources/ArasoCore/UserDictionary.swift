@@ -335,9 +335,38 @@ public final class DictionaryEngine: DecisionEngine, @unchecked Sendable {
         lock.withLock { store = fresh }
     }
 
+    /// A word the dictionary decided that went in: its entry's keys, the word as it went in
+    /// (without a particle after it) and its language.
+    public struct Applied: Equatable, Sendable {
+        public let keys: String
+        public let text: String
+        public let language: Language
+    }
+
+    /// The last few words the dictionary decided, newest first, each entry once: what the input
+    /// menu lists so a word can be told apart and forgotten after it went in. Kept in memory
+    /// only, never written: it is typed text.
+    public var recentlyApplied: [Applied] { lock.withLock { recent } }
+    private var recent: [Applied] = []
+    static let recentCount = 5
+
+    /// The session committed a word its dictionary entry decided. Entries for some apps only
+    /// aren't listed: forgetting from the menu forgets the entry for every app.
+    public func noteApplied(keys: String, text: String, language: Language) {
+        lock.withLock {
+            guard store.entries.contains(where: { $0.keys == keys && $0.language != nil && $0.forEveryApp }) else { return }
+            recent.removeAll { $0.keys == keys }
+            recent.insert(Applied(keys: keys, text: text, language: language), at: 0)
+            if recent.count > Self.recentCount { recent.removeLast(recent.count - Self.recentCount) }
+        }
+    }
+
     /// Forgets the keys' language, learned or added: the engine decides them again.
     public func forget(_ keys: String) {
-        persist(lock.withLock { store.forget(keys) ? store : nil })
+        persist(lock.withLock {
+            recent.removeAll { $0.keys == keys }
+            return store.forget(keys) ? store : nil
+        })
     }
 
     /// Adds a word, or changes the one with the same keys and apps.
@@ -374,6 +403,7 @@ public final class DictionaryEngine: DecisionEngine, @unchecked Sendable {
             var decision = Decision(language: language, confidence: 1, output: output,
                                     explanation: entry.source == .user ? "added" : "learned")
             decision.remembered = output.count
+            decision.rememberedKeys = keys
             return decision
         }
         if let split = withParticle(keys) { return split }
@@ -408,20 +438,20 @@ public final class DictionaryEngine: DecisionEngine, @unchecked Sendable {
                       let particle = Self.koreanParticle(tail), let last = front.text.last,
                       MixedWord.finalSound(of: last).flatMap({ MixedWord.particleAgrees(particle, final: $0) }) != false
                 else { continue }
-                return remembered(Decision(language: .korean, confidence: SplittingEngine.confidence, output: front.text + particle, explanation: how), front.text)
+                return remembered(Decision(language: .korean, confidence: SplittingEngine.confidence, output: front.text + particle, explanation: how), front.text, word.keys)
             case .english:
                 guard word.keys.count >= 3 || word.keys.contains(where: \.isUppercase) else { continue }
                 if let particle = Self.koreanParticle(tail), !readsAsKoreanWord(keys) {
                     let mixed = MixedWord(english: word.keys, koreanKeys: tail, korean: particle)
-                    return remembered(Decision(language: .mixed, confidence: SplittingEngine.confidence, output: mixed.text, explanation: how), word.keys)
+                    return remembered(Decision(language: .mixed, confidence: SplittingEngine.confidence, output: mixed.text, explanation: how), word.keys, word.keys)
                 }
                 if japaneseParticles, !RomajiComposer.compose(keys).isClean, let particle = Self.japaneseParticle(tail) {
-                    return remembered(Decision(language: .japanese, confidence: SplittingEngine.confidence, output: word.keys + particle, explanation: how), word.keys)
+                    return remembered(Decision(language: .japanese, confidence: SplittingEngine.confidence, output: word.keys + particle, explanation: how), word.keys, word.keys)
                 }
             case .japanese:
                 let front = RomajiComposer.compose(word.keys)
                 guard japaneseParticles, front.isClean, let particle = Self.japaneseParticle(tail) else { continue }
-                return remembered(Decision(language: .japanese, confidence: SplittingEngine.confidence, output: front.text + particle, explanation: how), front.text)
+                return remembered(Decision(language: .japanese, confidence: SplittingEngine.confidence, output: front.text + particle, explanation: how), front.text, word.keys)
             case .mixed:
                 continue
             }
@@ -429,10 +459,11 @@ public final class DictionaryEngine: DecisionEngine, @unchecked Sendable {
         return nil
     }
 
-    /// The decision with its remembered word, `front`, marked as such.
-    private func remembered(_ decision: Decision, _ front: String) -> Decision {
+    /// The decision with its remembered word, `front` typed as `keys`, marked as such.
+    private func remembered(_ decision: Decision, _ front: String, _ keys: String) -> Decision {
         var decision = decision
         decision.remembered = front.count
+        decision.rememberedKeys = keys
         return decision
     }
 

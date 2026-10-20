@@ -258,9 +258,10 @@ that way again. Correct the same keys the same way a second time and Araso alway
 particle after them (remember `ghostty` and you get `ghostty에`);
 switching a word back to Araso's own guess forgets it. When a word sticks, `안녕 → always Korean`
 shows under the caret for a moment, Araso's mark spinning through A, 아 and あ to stop on that language.
-From then on the word is underlined thick in the accent color while you type it (only the word when a
-particle follows; apps that ignore underline colors show the thickness alone), and the switch key's
-list puts a bookmark on the remembered reading; words you added yourself show the same; if that was a mistake, choose **Undo Last Learned** in the
+To tell whether a word went in because of the dictionary, open **Changed by the Dictionary** in the
+input menu: it lists the last five words the dictionary decided, as `ghostty → English`, and choosing
+one forgets it (the list is kept only until the input method restarts, and never saved). The switch
+key's list also puts a bookmark on the remembered reading. Words you added yourself show the same; if that was a mistake, choose **Undo Last Learned** in the
 input menu. Long tokens (over 20 keys, such as a
 sentence switched as one) aren't remembered.
 
@@ -346,7 +347,8 @@ From the input menu (the menu bar, while Araso is selected) you can:
   (Normal/Strict), whether Esc switches languages and whether the word is held after Space or
   punctuation, or drop its settings. Those are greyed while conversion is off
 - turn Japanese Input and Live Conversion on or off
-- undo the last learned word, and open Try Typing, the dictionary or the settings window
+- undo the last learned word, see and forget the words the dictionary changed lately, and open Try
+  Typing, the dictionary or the settings window
 
 The settings window has these panes, and changes apply at once.
 

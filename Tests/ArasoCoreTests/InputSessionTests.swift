@@ -18,13 +18,6 @@ final class FakeTextField: TextClient {
     var insertions: [String] = []
     /// The clause being converted, as the input method last marked it (nil: plain marked text).
     var selectedClause: NSRange?
-    /// The part of the marked text the user's dictionary decided, as last marked.
-    var remembered: NSRange?
-
-    func setMarkedText(_ s: String, remembered: NSRange) {
-        setMarkedText(s)
-        self.remembered = remembered
-    }
 
     func setMarkedText(_ s: String, selectedClause: NSRange, replacing range: NSRange?) {
         if let range { setMarkedText(s, replacing: range) } else { setMarkedText(s) }
@@ -33,7 +26,6 @@ final class FakeTextField: TextClient {
 
     func setMarkedText(_ s: String) {
         selectedClause = nil
-        remembered = nil
         let ns = text as NSString
         let target = marked.location != NSNotFound ? marked : NSRange(location: cursor, length: 0)
         text = ns.replacingCharacters(in: target, with: s)
@@ -44,7 +36,6 @@ final class FakeTextField: TextClient {
 
     func setMarkedText(_ s: String, replacing range: NSRange) {
         selectedClause = nil
-        remembered = nil
         let ns = text as NSString
         let target = marked.location != NSNotFound ? NSUnionRange(range, marked) : range
         text = ns.replacingCharacters(in: target, with: s)
@@ -56,7 +47,6 @@ final class FakeTextField: TextClient {
     func insertText(_ s: String, replacing range: NSRange?) {
         insertions.append(s)
         selectedClause = nil
-        remembered = nil
         let target = range ?? (marked.location != NSNotFound ? marked : NSRange(location: cursor, length: 0))
         text = (text as NSString).replacingCharacters(in: target, with: s)
         marked = NSRange(location: NSNotFound, length: 0)
@@ -129,23 +119,27 @@ final class FakeTextField: TextClient {
         #expect(session.readings?.texts == ["githubdp", "github에"]) // a garbled reading isn't listed
     }
 
-    /// A word the dictionary decided is marked while it is typed (with a particle after it, the
-    /// word alone), and its reading is marked in the switch key's list; other words aren't.
-    @Test func rememberedWordIsMarked() {
+    /// A word the dictionary decided is listed once it went in, newest first and without the
+    /// particle after it, and its reading is marked in the switch key's list; a word the engine
+    /// decided, or one the user switched, isn't. Forgetting it takes it off the list.
+    @Test func wordsTheDictionaryDecidedAreListed() {
         session.engine.add(.init(keys: "ghostty", language: .english, source: .user))
-        type("dkssud")
-        #expect(field.remembered == nil)
-        type(" ghostty")
-        #expect(field.text.hasSuffix("ghostty"))
-        #expect(field.remembered == NSRange(location: 0, length: 7))
+        session.engine.add(.init(keys: "chrao", language: .korean, source: .user))
+        type("dkssud ghostty ")
+        #expect(session.engine.recentlyApplied == [.init(keys: "ghostty", text: "ghostty", language: .english)])
+        type("chraofh ") // 촉매로
+        #expect(session.engine.recentlyApplied.map(\.keys) == ["chrao", "ghostty"])
+        #expect(session.engine.recentlyApplied.first?.text == "촉매")
+        type("ghosttydp ")
+        #expect(field.text.hasSuffix("ghostty에 "))
+        #expect(session.engine.recentlyApplied.map(\.keys) == ["ghostty", "chrao"])
+        type("chrao")
         session.handle(.escape, client: field)
-        #expect(field.remembered == nil) // the user's own choice now
-        #expect(session.readings?.remembered == session.readings?.languages.firstIndex(of: .english))
-        type(" ghosttydp")
-        #expect(field.text.hasSuffix("ghostty에"))
-        #expect(field.remembered == NSRange(location: 0, length: 7))
+        #expect(session.readings?.remembered == session.readings?.languages.firstIndex(of: .korean))
         type(" ")
-        #expect(field.remembered == nil)
+        #expect(session.engine.recentlyApplied.map(\.keys) == ["ghostty", "chrao"]) // switched: not the dictionary's
+        session.engine.forget("ghostty")
+        #expect(session.engine.recentlyApplied.map(\.keys) == ["chrao"])
     }
 
     /// One Esc changes only that word (a habitual Esc shouldn't stick); the same

@@ -107,6 +107,12 @@ final class Runtime {
         SettingsNotice.postFromInputMethod()
     }
 
+    /// Forgets a dictionary word the input menu listed as one it changed.
+    func forget(_ keys: String) {
+        engine.forget(keys)
+        SettingsNotice.postFromInputMethod()
+    }
+
     func undoLastLearned() {
         guard let keys = engine.lastLearned else { return }
         engine.forget(keys)

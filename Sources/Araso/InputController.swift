@@ -401,6 +401,16 @@ final class InputController: IMKInputController {
             if let keys = runtime.engine.lastLearned {
                 add(L("Undo Last Learned (%@)", keys), #selector(undoLastLearned(_:)))
             }
+            // What the dictionary decided lately, to tell whether a word went in because of it
+            // and forget it on the spot.
+            let applied = runtime.engine.recentlyApplied
+            if !applied.isEmpty {
+                add(L("Changed by the Dictionary"), nil)
+                for word in applied {
+                    add(L("%@ → %@ · Forget", word.text, word.language.displayName), #selector(forgetApplied(_:)),
+                        indent: 1, value: word.keys)
+                }
+            }
             Updater.shared.refresh()
             if let release = Updater.shared.available {
                 add(L("Update to Araso %@…", release.version), #selector(openUpdate(_:)))
@@ -470,6 +480,11 @@ final class InputController: IMKInputController {
         MainActor.assumeIsolated { Runtime.shared.removePolicy(for: app) }
     }
 
+    @objc func forgetApplied(_ sender: Any?) {
+        guard let keys = menuItem(sender)?.representedObject as? String else { return }
+        MainActor.assumeIsolated { Runtime.shared.forget(keys) }
+    }
+
     @objc func undoLastLearned(_ sender: Any?) {
         MainActor.assumeIsolated { Runtime.shared.undoLastLearned() }
     }
@@ -521,24 +536,6 @@ private final class IMKClient: TextClient {
         }
         input.setMarkedText(marked, selectionRange: NSRange(location: whole.length, length: 0),
                             replacementRange: range ?? Self.noRange)
-    }
-
-    /// The remembered word gets a thick underline in the accent color: the color where the app
-    /// draws underline colors (Cocoa text views), the thickness where it only tells thick from thin.
-    func setMarkedText(_ text: String, remembered: NSRange) {
-        let marked = NSMutableAttributedString(string: text)
-        let whole = NSRange(location: 0, length: marked.length)
-        let word = NSIntersectionRange(remembered, whole)
-        if let base = marks?.mark(forStyle: kTSMHiliteRawText, at: whole) as? [NSAttributedString.Key: Any] {
-            marked.addAttributes(base, range: whole)
-        } else {
-            marked.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: whole)
-        }
-        if word.length > 0 {
-            marked.addAttributes([.underlineStyle: NSUnderlineStyle.thick.rawValue,
-                                  .underlineColor: NSColor.controlAccentColor], range: word)
-        }
-        input.setMarkedText(marked, selectionRange: NSRange(location: whole.length, length: 0), replacementRange: Self.noRange)
     }
 
     func insertText(_ text: String, replacing range: NSRange?) {

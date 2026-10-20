@@ -85,6 +85,8 @@ public struct Decision: Sendable {
     /// won (one learned for good or added by hand): all of it, or the word before a particle
     /// (ghostty in ghostty에). Nil when the dictionary didn't decide.
     public var remembered: Int? = nil
+    /// The keys of that dictionary word (ghostty for ghosttydp).
+    public var rememberedKeys: String? = nil
 
     public init(language: Language, confidence: Double, output: String, explanation: String, runnerUp: Language? = nil) {
         self.language = language
