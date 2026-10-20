@@ -28,7 +28,7 @@ final class InputController: IMKInputController {
         if let current, current.generation == runtime.generation { return current.session }
         let fresh = runtime.makeSession()
         if let old = current?.session {
-            old.commit(client: client().map { IMKClient($0 as IMKTextInput) })
+            old.commit(client: client().map { textClient($0 as IMKTextInput) })
             fresh.activate(app: old.app)
         }
         current = (fresh, runtime.generation)
@@ -72,13 +72,13 @@ final class InputController: IMKInputController {
     @MainActor func vimChanged(to signal: VimSignal, from app: String?) {
         let session = session
         guard app.map({ $0 == session.app }) ?? !session.policy.switchKeys.contains(.escape) else { return }
-        session.vimChanged(to: signal, client: client().map { IMKClient($0 as IMKTextInput) })
+        session.vimChanged(to: signal, client: client().map { textClient($0 as IMKTextInput) })
         log.debug("vim \(signal.rawValue, privacy: .public)")
     }
 
     override func deactivateServer(_ sender: Any!) {
         MainActor.assumeIsolated {
-            session.commit(client: textInput(sender).map(IMKClient.init))
+            session.commit(client: textInput(sender).map(textClient))
             candidatesWindow?.hide()
             Runtime.shared.converter?.save()
         }
@@ -87,7 +87,7 @@ final class InputController: IMKInputController {
 
     override func commitComposition(_ sender: Any!) {
         MainActor.assumeIsolated {
-            session.commitForNewContext(client: textInput(sender).map(IMKClient.init))
+            session.commitForNewContext(client: textInput(sender).map(textClient))
             candidatesWindow?.hide()
         }
     }
@@ -97,6 +97,9 @@ final class InputController: IMKInputController {
     private func textInput(_ sender: Any?) -> IMKTextInput? {
         (sender as? IMKTextInput) ?? client()
     }
+
+    /// The session's view of a client; this controller gives it the system's clause underlines.
+    private func textClient(_ input: IMKTextInput) -> IMKClient { IMKClient(input, marks: self) }
 
     override func recognizedEvents(_ sender: Any!) -> Int {
         Int(NSEvent.EventTypeMask.keyDown.rawValue | NSEvent.EventTypeMask.flagsChanged.rawValue)
@@ -133,7 +136,7 @@ final class InputController: IMKInputController {
                 return true
             }
             let key = key(for: event)
-            let handled = session.handle(key, client: IMKClient(input))
+            let handled = session.handle(key, client: textClient(input))
             syncCandidates()
             // The settings window's typing test shows how each word was decided; only there.
             if session.app == Bundle.main.bundleIdentifier, let trace = session.lastTrace {
@@ -205,14 +208,14 @@ final class InputController: IMKInputController {
               Date().timeIntervalSince(down.at) < 0.5 else { return }
         switchTapDown = nil
         guard !session.inVimNormalMode else { return } // vim's own keys
-        let handled = session.handle(.cycle, client: IMKClient(client))
+        let handled = session.handle(.cycle, client: textClient(client))
         syncCandidates()
         log.debug("handle switchTap handled=\(handled) app=\(self.session.app ?? "?", privacy: .public)")
     }
 
     /// Pauses or resumes this text field, and says so under the caret.
     @MainActor private func togglePause(client: IMKTextInput?) {
-        session.togglePause(client: client.map(IMKClient.init))
+        session.togglePause(client: client.map(textClient))
         PauseHUD.show(paused: session.paused, caret: client.map(caretRect) ?? .zero)
         log.info("paused=\(self.session.paused) app=\(self.session.app ?? "?", privacy: .public)")
     }
@@ -310,7 +313,7 @@ final class InputController: IMKInputController {
             guard let conversion = session.conversion, let text = candidateString?.string,
                   let index = conversion.candidates.firstIndex(where: { $0.text == text }),
                   let input: IMKTextInput = client() else { return }
-            session.choose(index, client: IMKClient(input))
+            session.choose(index, client: textClient(input))
             syncCandidates()
         }
     }
@@ -460,9 +463,14 @@ final class InputController: IMKInputController {
 /// `TextClient` over the IMK client proxy.
 private final class IMKClient: TextClient {
     private let input: IMKTextInput
+    /// Where the system's marked-text styles come from (`mark(forStyle:at:)`).
+    private weak var marks: IMKInputController?
     private static let noRange = NSRange(location: NSNotFound, length: 0)
 
-    init(_ input: IMKTextInput) { self.input = input }
+    init(_ input: IMKTextInput, marks: IMKInputController) {
+        self.input = input
+        self.marks = marks
+    }
 
     func setMarkedText(_ text: String) {
         let length = (text as NSString).length
@@ -472,6 +480,27 @@ private final class IMKClient: TextClient {
     func setMarkedText(_ text: String, replacing range: NSRange) {
         let length = (text as NSString).length
         input.setMarkedText(text, selectionRange: NSRange(location: length, length: 0), replacementRange: range)
+    }
+
+    /// The selected clause gets the system's selected-converted style (a thick underline) and the
+    /// rest of the reading its converted style, each its own clause segment, so the app draws the
+    /// boundary ←/→ moves as macOS's Japanese input does.
+    func setMarkedText(_ text: String, selectedClause: NSRange, replacing range: NSRange?) {
+        let marked = NSMutableAttributedString(string: text)
+        let whole = NSRange(location: 0, length: marked.length)
+        let selected = NSIntersectionRange(selectedClause, whole)
+        if let marks {
+            func style(_ style: Int, _ range: NSRange, segment: Int) {
+                guard range.length > 0 else { return }
+                var attributes = (marks.mark(forStyle: style, at: range) as? [NSAttributedString.Key: Any]) ?? [:]
+                attributes[.markedClauseSegment] = segment
+                marked.addAttributes(attributes, range: range)
+            }
+            style(kTSMHiliteConvertedText, whole, segment: 1)
+            style(kTSMHiliteSelectedConvertedText, selected, segment: 0)
+        }
+        input.setMarkedText(marked, selectionRange: NSRange(location: whole.length, length: 0),
+                            replacementRange: range ?? Self.noRange)
     }
 
     func insertText(_ text: String, replacing range: NSRange?) {

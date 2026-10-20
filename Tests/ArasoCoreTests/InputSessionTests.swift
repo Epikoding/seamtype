@@ -16,8 +16,16 @@ final class FakeTextField: TextClient {
     var readable = true
     /// Every text the input method inserted, in order: a held word must go in with its boundary in one.
     var insertions: [String] = []
+    /// The clause being converted, as the input method last marked it (nil: plain marked text).
+    var selectedClause: NSRange?
+
+    func setMarkedText(_ s: String, selectedClause: NSRange, replacing range: NSRange?) {
+        if let range { setMarkedText(s, replacing: range) } else { setMarkedText(s) }
+        self.selectedClause = selectedClause
+    }
 
     func setMarkedText(_ s: String) {
+        selectedClause = nil
         let ns = text as NSString
         let target = marked.location != NSNotFound ? marked : NSRange(location: cursor, length: 0)
         text = ns.replacingCharacters(in: target, with: s)
@@ -27,6 +35,7 @@ final class FakeTextField: TextClient {
     }
 
     func setMarkedText(_ s: String, replacing range: NSRange) {
+        selectedClause = nil
         let ns = text as NSString
         let target = marked.location != NSNotFound ? NSUnionRange(range, marked) : range
         text = ns.replacingCharacters(in: target, with: s)
@@ -37,6 +46,7 @@ final class FakeTextField: TextClient {
 
     func insertText(_ s: String, replacing range: NSRange?) {
         insertions.append(s)
+        selectedClause = nil
         let target = range ?? (marked.location != NSNotFound ? marked : NSRange(location: cursor, length: 0))
         text = (text as NSString).replacingCharacters(in: target, with: s)
         marked = NSRange(location: NSNotFound, length: 0)

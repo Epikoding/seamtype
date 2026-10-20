@@ -10,6 +10,17 @@ public protocol TextClient: AnyObject {
     func selectedRange() -> NSRange
     func markedRange() -> NSRange
     func text(in range: NSRange) -> String?
+    /// Marked text being converted to kanji: `selectedClause` (UTF-16, within `text`) is the clause
+    /// the candidates are for, drawn thick as Japanese IMEs do; the rest of the reading is thin.
+    /// `range` as in `setMarkedText(_:replacing:)`.
+    func setMarkedText(_ text: String, selectedClause: NSRange, replacing range: NSRange?)
+}
+
+public extension TextClient {
+    /// A client that draws no clauses shows the plain marked text.
+    func setMarkedText(_ text: String, selectedClause: NSRange, replacing range: NSRange?) {
+        if let range { setMarkedText(text, replacing: range) } else { setMarkedText(text) }
+    }
 }
 
 /// Per-client typing state: the word being composed, the language of the previous
@@ -95,6 +106,9 @@ public final class InputSession {
         public var current: ConversionCandidate { candidates[selected] }
         /// What the user sees: the selected candidate, then any reading it doesn't cover.
         public var display: String { current.text + String(kana.dropFirst(current.kanaCount)) }
+        /// The selected candidate's place in `display`: the clause being converted (今日は in
+        /// 今日は|いいてんき).
+        public var selectedClause: NSRange { NSRange(location: 0, length: (current.text as NSString).length) }
     }
 
     private struct Committed {
@@ -857,11 +871,7 @@ public final class InputSession {
         syllableStart = nil
         enginePreview = nil
         previousLanguage = .japanese
-        if let prefixRange {
-            client.setMarkedText(conversion!.display, replacing: prefixRange) // the number, then the phrase
-        } else {
-            client.setMarkedText(conversion!.display)
-        }
+        showConversion(client, replacing: prefixRange) // with a prefix: the number, then the phrase
     }
 
     /// Shows the reading as katakana (or hiragana) as the selected "candidate": Return
@@ -878,7 +888,13 @@ public final class InputSession {
         syllableStart = nil
         enginePreview = nil
         previousLanguage = .japanese
-        client.setMarkedText(conversion!.display)
+        showConversion(client)
+    }
+
+    /// The conversion as the marked text, its selected clause marked as such.
+    private func showConversion(_ client: TextClient, replacing range: NSRange? = nil) {
+        guard let conversion else { return }
+        client.setMarkedText(conversion.display, selectedClause: conversion.selectedClause, replacing: range)
     }
 
     /// The conversion with its first clause `step` kana shorter or longer (今日は|いいてんき):
@@ -906,19 +922,19 @@ public final class InputSession {
         case .printable(" "), .down, .shiftSpace:
             conversion.selected = (conversion.selected + 1) % conversion.candidates.count
             self.conversion = conversion
-            client.setMarkedText(conversion.display)
+            showConversion(client)
             return true
 
         case .up:
             conversion.selected = (conversion.selected + conversion.candidates.count - 1) % conversion.candidates.count
             self.conversion = conversion
-            client.setMarkedText(conversion.display)
+            showConversion(client)
             return true
 
         case .left, .right:
             if let resized = resizeFirstClause(conversion, by: key == .left ? -1 : 1) {
                 self.conversion = resized
-                client.setMarkedText(resized.display)
+                showConversion(client)
             }
             return true
 
@@ -996,7 +1012,7 @@ public final class InputSession {
         } else {
             // The rest is the engine's Japanese, not something the user corrected.
             self.conversion = Conversion(kana: rest, keys: restKeys, candidates: candidates, selected: 0)
-            client.setMarkedText(self.conversion!.display)
+            showConversion(client)
         }
     }
 

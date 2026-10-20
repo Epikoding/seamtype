@@ -129,6 +129,20 @@ import Testing
         #expect(field.text == "今日はいい天気ですね")
     }
 
+    /// The clause the candidates are for is marked as the selected one, so the app draws where
+    /// ←/→ put the boundary; the kana typed before Space are plain marked text.
+    @Test func conversionMarksTheSelectedClause() {
+        type("kyouhaiitenkidesune")
+        #expect(field.selectedClause == nil)
+        type(" ")
+        #expect(field.selectedClause == NSRange(location: 0, length: 10)) // 今日はいい天気ですね, all of it
+        session.handle(.down, client: field) // 今日は|いいてんきですね
+        #expect(field.text == "今日はいいてんきですね")
+        #expect(field.selectedClause == NSRange(location: 0, length: 3))
+        session.handle(.enter, client: field) // 今日は goes in; the rest is converted on its own
+        #expect(field.selectedClause == NSRange(location: 0, length: 7)) // いい天気ですね
+    }
+
     /// The homophones past the converter's list follow it in the candidate window, once each.
     @Test func candidateWindowListsEveryHomophone() {
         type("shou ")
