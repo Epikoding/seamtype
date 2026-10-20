@@ -257,7 +257,10 @@ doesn't, so a stray switch doesn't do much. It is forgotten after 30 days unless
 that way again. Correct the same keys the same way a second time and Araso always writes them so, also with a
 particle after them (remember `ghostty` and you get `ghostty에`);
 switching a word back to Araso's own guess forgets it. When a word sticks, `안녕 → always Korean`
-shows under the caret for a moment, Araso's mark spinning through A, 아 and あ to stop on that language; if that was a mistake, choose **Undo Last Learned** in the
+shows under the caret for a moment, Araso's mark spinning through A, 아 and あ to stop on that language.
+From then on the word is underlined thick in the accent color while you type it (only the word when a
+particle follows; apps that ignore underline colors show the thickness alone), and the switch key's
+list puts a bookmark on the remembered reading; words you added yourself show the same; if that was a mistake, choose **Undo Last Learned** in the
 input menu. Long tokens (over 20 keys, such as a
 sentence switched as one) aren't remembered.
 

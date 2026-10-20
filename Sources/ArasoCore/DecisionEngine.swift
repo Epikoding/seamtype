@@ -81,6 +81,10 @@ public struct Decision: Sendable {
     public let explanation: String
     /// The second most likely language, when the engine compared several.
     public var runnerUp: Language? = nil
+    /// How many characters at the start of `output` are a word of the user's dictionary that
+    /// won (one learned for good or added by hand): all of it, or the word before a particle
+    /// (ghostty in ghostty에). Nil when the dictionary didn't decide.
+    public var remembered: Int? = nil
 
     public init(language: Language, confidence: Double, output: String, explanation: String, runnerUp: Language? = nil) {
         self.language = language

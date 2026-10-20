@@ -523,6 +523,24 @@ private final class IMKClient: TextClient {
                             replacementRange: range ?? Self.noRange)
     }
 
+    /// The remembered word gets a thick underline in the accent color: the color where the app
+    /// draws underline colors (Cocoa text views), the thickness where it only tells thick from thin.
+    func setMarkedText(_ text: String, remembered: NSRange) {
+        let marked = NSMutableAttributedString(string: text)
+        let whole = NSRange(location: 0, length: marked.length)
+        let word = NSIntersectionRange(remembered, whole)
+        if let base = marks?.mark(forStyle: kTSMHiliteRawText, at: whole) as? [NSAttributedString.Key: Any] {
+            marked.addAttributes(base, range: whole)
+        } else {
+            marked.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: whole)
+        }
+        if word.length > 0 {
+            marked.addAttributes([.underlineStyle: NSUnderlineStyle.thick.rawValue,
+                                  .underlineColor: NSColor.controlAccentColor], range: word)
+        }
+        input.setMarkedText(marked, selectionRange: NSRange(location: whole.length, length: 0), replacementRange: Self.noRange)
+    }
+
     func insertText(_ text: String, replacing range: NSRange?) {
         input.insertText(text, replacementRange: range ?? Self.noRange)
     }

@@ -370,8 +370,11 @@ public final class DictionaryEngine: DecisionEngine, @unchecked Sendable {
         if let entry, entry.wins, let language = entry.language {
             // Rendered by the base engine: this engine's own render(.mixed) would ask it to
             // decide the keys again, find them in the dictionary, and so on without end.
-            return Decision(language: language, confidence: 1, output: base.render(keys, as: language),
-                            explanation: entry.source == .user ? "added" : "learned")
+            let output = base.render(keys, as: language)
+            var decision = Decision(language: language, confidence: 1, output: output,
+                                    explanation: entry.source == .user ? "added" : "learned")
+            decision.remembered = output.count
+            return decision
         }
         if let split = withParticle(keys) { return split }
         var context = context
@@ -405,25 +408,32 @@ public final class DictionaryEngine: DecisionEngine, @unchecked Sendable {
                       let particle = Self.koreanParticle(tail), let last = front.text.last,
                       MixedWord.finalSound(of: last).flatMap({ MixedWord.particleAgrees(particle, final: $0) }) != false
                 else { continue }
-                return Decision(language: .korean, confidence: SplittingEngine.confidence, output: front.text + particle, explanation: how)
+                return remembered(Decision(language: .korean, confidence: SplittingEngine.confidence, output: front.text + particle, explanation: how), front.text)
             case .english:
                 guard word.keys.count >= 3 || word.keys.contains(where: \.isUppercase) else { continue }
                 if let particle = Self.koreanParticle(tail), !readsAsKoreanWord(keys) {
                     let mixed = MixedWord(english: word.keys, koreanKeys: tail, korean: particle)
-                    return Decision(language: .mixed, confidence: SplittingEngine.confidence, output: mixed.text, explanation: how)
+                    return remembered(Decision(language: .mixed, confidence: SplittingEngine.confidence, output: mixed.text, explanation: how), word.keys)
                 }
                 if japaneseParticles, !RomajiComposer.compose(keys).isClean, let particle = Self.japaneseParticle(tail) {
-                    return Decision(language: .japanese, confidence: SplittingEngine.confidence, output: word.keys + particle, explanation: how)
+                    return remembered(Decision(language: .japanese, confidence: SplittingEngine.confidence, output: word.keys + particle, explanation: how), word.keys)
                 }
             case .japanese:
                 let front = RomajiComposer.compose(word.keys)
                 guard japaneseParticles, front.isClean, let particle = Self.japaneseParticle(tail) else { continue }
-                return Decision(language: .japanese, confidence: SplittingEngine.confidence, output: front.text + particle, explanation: how)
+                return remembered(Decision(language: .japanese, confidence: SplittingEngine.confidence, output: front.text + particle, explanation: how), front.text)
             case .mixed:
                 continue
             }
         }
         return nil
+    }
+
+    /// The decision with its remembered word, `front`, marked as such.
+    private func remembered(_ decision: Decision, _ front: String) -> Decision {
+        var decision = decision
+        decision.remembered = front.count
+        return decision
     }
 
     private func readsAsKoreanWord(_ keys: String) -> Bool {

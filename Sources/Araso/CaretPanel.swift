@@ -90,6 +90,8 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
     private static var shown: InputSession.Readings?
     private static var highlight: NSView?
     private static var rows: [(view: NSView, tag: NSTextField, text: NSTextField)] = []
+    /// The bookmark on the reading the user's dictionary gives the keys.
+    private static var bookmark: (row: Int, view: NSImageView)?
     /// Bumped on every show and hide, so a fade or a scramble left from before stops.
     private static var generation = 0
     private static var hiding = false
@@ -141,7 +143,8 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
         let texts = readings.texts.map { label($0, size: 14) }
         let tagWidth = tags.map(\.fittingSize.width).max() ?? 0
         let textWidth = min(texts.map(\.fittingSize.width).max() ?? 0, 240)
-        let rowWidth = max(8 + ceil(tagWidth) + 6 + ceil(textWidth) + 10, 96)
+        let mark = readings.remembered.flatMap { readings.texts.indices.contains($0) ? $0 : nil }
+        let rowWidth = max(8 + ceil(tagWidth) + 6 + ceil(textWidth) + (mark == nil ? 10 : 24), 96)
         let size = NSSize(width: rowWidth + inset * 2, height: CGFloat(texts.count) * rowHeight + inset * 2)
 
         let background = NSVisualEffectView(frame: NSRect(origin: .zero, size: size))
@@ -177,6 +180,14 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
             row.addSubview(text)
             content.addSubview(row)
             return (row, tag, text)
+        }
+        bookmark = nil
+        if let mark, let symbol = NSImage(systemSymbolName: "bookmark.fill", accessibilityDescription: L("Remembered")) {
+            let view = NSImageView(image: symbol)
+            view.symbolConfiguration = .init(pointSize: 10, weight: .medium)
+            view.frame = NSRect(x: rowWidth - 20, y: (rowHeight - 12) / 2, width: 12, height: 12)
+            rows[mark].view.addSubview(view)
+            bookmark = (mark, view)
         }
         color(selected: readings.selected)
 
@@ -229,6 +240,9 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
         for (i, row) in rows.enumerated() {
             row.text.textColor = i == selected ? .alternateSelectedControlTextColor : .labelColor
             row.tag.textColor = i == selected ? .alternateSelectedControlTextColor : .secondaryLabelColor
+        }
+        if let bookmark {
+            bookmark.view.contentTintColor = bookmark.row == selected ? .alternateSelectedControlTextColor : .controlAccentColor
         }
     }
 

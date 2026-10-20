@@ -14,6 +14,9 @@ public protocol TextClient: AnyObject {
     /// the candidates are for, drawn thick as Japanese IMEs do; the rest of the reading is thin.
     /// `range` as in `setMarkedText(_:replacing:)`.
     func setMarkedText(_ text: String, selectedClause: NSRange, replacing range: NSRange?)
+    /// Marked text of which `remembered` (UTF-16, within `text`) is a word from the user's
+    /// dictionary: drawn so the user sees the dictionary decided it.
+    func setMarkedText(_ text: String, remembered: NSRange)
 }
 
 public extension TextClient {
@@ -21,6 +24,8 @@ public extension TextClient {
     func setMarkedText(_ text: String, selectedClause: NSRange, replacing range: NSRange?) {
         if let range { setMarkedText(text, replacing: range) } else { setMarkedText(text) }
     }
+
+    func setMarkedText(_ text: String, remembered: NSRange) { setMarkedText(text) }
 }
 
 /// Per-client typing state: the word being composed, the language of the previous
@@ -118,6 +123,8 @@ public final class InputSession {
         /// Each reading's language, for its tag in the list.
         public let languages: [Language]
         public let selected: Int
+        /// The reading the user's dictionary gives these keys, when it has one that wins.
+        public var remembered: Int? = nil
     }
 
     /// A word the user corrected the same way twice, learned for good just now: the input method
@@ -1205,7 +1212,8 @@ public final class InputSession {
             }
             previewLanguage = language
             enginePreview = language
-            show(language == .japanese ? japaneseDisplay() : preview(as: language) ?? keys, client)
+            let text = language == .japanese ? japaneseDisplay() : preview(as: language) ?? keys
+            show(text, client, remembered: language == decision.language ? Self.remembered(decision, in: text) : nil)
         }
     }
 
@@ -1229,12 +1237,26 @@ public final class InputSession {
                           rendered: (String, Language) -> String) -> Readings? {
         let cycle = language.cycle(for: keys, japanese: japaneseEnabled, splits: engineSplits(keys))
         guard cycle.count > 1, let selected = cycle.firstIndex(of: language) else { return nil }
-        return Readings(texts: cycle.map { rendered(keys, $0) }, languages: cycle, selected: selected)
+        let own = engine.decide(keys, context: DecisionContext(app: app))
+        return Readings(texts: cycle.map { rendered(keys, $0) }, languages: cycle, selected: selected,
+                        remembered: own.remembered == nil ? nil : cycle.firstIndex(of: own.language))
     }
 
-    /// The word being composed as the marked text, with its boundary while it is held.
-    private func show(_ text: String, _ client: TextClient) {
-        client.setMarkedText(heldBoundary.map { text + String($0) } ?? text)
+    /// The word being composed as the marked text, with its boundary while it is held, and
+    /// the part of it the user's dictionary decided.
+    private func show(_ text: String, _ client: TextClient, remembered: NSRange? = nil) {
+        let shown = heldBoundary.map { text + String($0) } ?? text
+        if let remembered { client.setMarkedText(shown, remembered: remembered) } else { client.setMarkedText(shown) }
+    }
+
+    /// Where the decision's remembered word is in `text`, the word as shown: all of it when the
+    /// dictionary decided the whole keys, else the word before the particle, if `text` starts
+    /// with it (live conversion may show something else).
+    static func remembered(_ decision: Decision, in text: String) -> NSRange? {
+        guard let count = decision.remembered, count > 0, !text.isEmpty else { return nil }
+        if count >= decision.output.count { return NSRange(location: 0, length: (text as NSString).length) }
+        let front = String(decision.output.prefix(count))
+        return text.hasPrefix(front) ? NSRange(location: 0, length: (front as NSString).length) : nil
     }
 
     /// An ASCII symbol that ends a word and is held with it in a `holdSpace` app: anything the
