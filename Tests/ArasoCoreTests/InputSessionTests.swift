@@ -132,6 +132,22 @@ final class FakeTextField: TextClient {
         #expect(field.text == flipped + flipped + flipped)
     }
 
+    /// The key that makes a correction stick says so (the input method shows it), once: the
+    /// first correction and the word typed afterwards don't.
+    @Test func secondCorrectionReportsTheLearnedWord() {
+        type("rjtm ")
+        session.handle(.escape, client: field)
+        let flipped = String(field.text.dropLast())
+        type("r")
+        #expect(session.learned == nil) // once: only a nudge
+        type("jtm ")
+        session.handle(.escape, client: field)
+        type("a") // the flip window closes: learned for good
+        #expect(session.learned == InputSession.Learned(text: flipped, language: .english))
+        type("b")
+        #expect(session.learned == nil)
+    }
+
     @Test func flipOnlyAppliesToTheWordBeforeTheCaret() {
         type("dkssud ")
         field.cursor = 0 // user clicked elsewhere

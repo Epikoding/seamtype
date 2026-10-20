@@ -449,15 +449,20 @@ public final class DictionaryEngine: DecisionEngine, @unchecked Sendable {
     /// back to the engine's choice forgets the word.
     ///
     /// Pass `engineChoice` when the caller already knows what was shown (the input method
-    /// always does: a fresh decision might not match).
-    public func learn(_ keys: String, as language: Language, engineChoice: Language? = nil) {
+    /// always does: a fresh decision might not match). Returns true when the word is now learned
+    /// for good (the second correction).
+    @discardableResult
+    public func learn(_ keys: String, as language: Language, engineChoice: Language? = nil) -> Bool {
         let shown = engineChoice ?? decide(keys, context: DecisionContext()).language
         let day = today()
+        var sure = false
         persist(lock.withLock {
             let before = store
-            if store.learn(keys, as: language, shown: shown, today: day) { lastLearnedKeys = keys }
+            sure = store.learn(keys, as: language, shown: shown, today: day)
+            if sure { lastLearnedKeys = keys }
             return store == before ? nil : store
         })
+        return sure
     }
 
     /// The word went in as `language` without a correction: a weak entry saying so stays.

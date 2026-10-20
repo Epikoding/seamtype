@@ -115,3 +115,65 @@ import Cocoa
         return box
     }
 }
+
+/// A word learned for good just now (`InputSession.learned`), said for a moment under the caret
+/// in the system indicator's colors, as PauseHUD is: from here on it goes in that way, and the
+/// input menu's undo takes it back.
+@MainActor enum LearnedHUD {
+    private static var panel: NSPanel?
+    private static var label: NSTextField?
+    private static var shown = 0
+    private static let height: CGFloat = 23
+    private static let gap: CGFloat = 4
+
+    static func show(_ learned: InputSession.Learned, caret: NSRect) {
+        guard caret != .zero else { return }
+        let (panel, label) = make()
+        label.stringValue = L("%@ → always %@", learned.text, learned.language.displayName)
+        label.setAccessibilityLabel(label.stringValue)
+        let accent = NSColor.controlAccentColor.usingColorSpace(.sRGB) ?? .systemBlue
+        panel.contentView?.layer?.backgroundColor = NSColor(displayP3Red: accent.redComponent, green: accent.greenComponent,
+                                                            blue: accent.blueComponent, alpha: 1).cgColor
+        let size = NSSize(width: ceil(label.intrinsicContentSize.width) + 24, height: height)
+        panel.setFrame(NSRect(origin: CaretPanel.origin(for: size, caret: caret, gap: gap, centered: true), size: size),
+                       display: true)
+        panel.alphaValue = 1
+        panel.orderFrontRegardless()
+
+        shown += 1
+        let current = shown
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
+            guard current == shown else { return }
+            NSAnimationContext.runAnimationGroup({ $0.duration = 0.25; panel.animator().alphaValue = 0 }) {
+                MainActor.assumeIsolated { if current == shown { panel.orderOut(nil) } }
+            }
+        }
+    }
+
+    static func hide() {
+        shown += 1
+        panel?.orderOut(nil)
+    }
+
+    private static func make() -> (NSPanel, NSTextField) {
+        if let panel, let label { return (panel, label) }
+        let panel = CaretPanel.make(size: NSSize(width: 0, height: height))
+        let capsule = NSView()
+        capsule.wantsLayer = true
+        capsule.layer?.cornerRadius = height / 2
+        capsule.layer?.cornerCurve = .continuous
+        let label = NSTextField(labelWithString: "")
+        label.font = .systemFont(ofSize: 13, weight: .medium)
+        label.textColor = .white
+        label.translatesAutoresizingMaskIntoConstraints = false
+        capsule.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.centerXAnchor.constraint(equalTo: capsule.centerXAnchor),
+            label.centerYAnchor.constraint(equalTo: capsule.centerYAnchor),
+        ])
+        panel.contentView = capsule
+        self.panel = panel
+        self.label = label
+        return (panel, label)
+    }
+}

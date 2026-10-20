@@ -118,6 +118,13 @@ public final class InputSession {
         public let selected: Int
     }
 
+    /// A word the user corrected the same way twice, learned for good just now: the input method
+    /// says so under the caret, since from here on it goes in that way.
+    public struct Learned: Equatable {
+        public let text: String
+        public let language: Language
+    }
+
     private struct Committed {
         let keys: String
         /// What Araso chose before any Esc.
@@ -151,6 +158,8 @@ public final class InputSession {
     /// Set by a switch key that changed a word (being typed or just committed), cleared by the
     /// next key: the readings to list while the user picks one.
     public private(set) var readings: Readings?
+    /// Set by the key that made a correction stick (`Learned`), cleared by the next one.
+    public private(set) var learned: Learned?
     private let policies: AppPolicies
     private var forced: Language?
     /// Whether `forced` is the user's choice (Esc) rather than "back to kana" after converting
@@ -272,6 +281,7 @@ public final class InputSession {
     /// Returns true when the key was consumed.
     public func handle(_ key: Key, client: TextClient) -> Bool {
         readings = nil
+        learned = nil
         guard policy.enabled, !paused else { return false }
         if vimMode == .normal {
             // Vim's normal mode: every key is a command. ⇧Esc is the way out if vim's last word
@@ -1440,7 +1450,9 @@ public final class InputSession {
     private func record(_ keys: String, as language: Language, engineChoice: Language) {
         if let last = lastRecorded, last.keys == keys, last.language == language { return }
         lastRecorded = (keys, language)
-        engine.learn(keys, as: language, engineChoice: engineChoice)
+        if engine.learn(keys, as: language, engineChoice: engineChoice) {
+            learned = Learned(text: committedReading(keys, as: language), language: language)
+        }
     }
 
     /// Replaces a just-committed word with its next rendering, but only if the caret
