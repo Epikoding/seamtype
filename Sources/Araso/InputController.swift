@@ -47,6 +47,8 @@ final class InputController: IMKInputController {
         static let f6: UInt16 = 97
         static let f7: UInt16 = 98
         static let rightOption: UInt16 = 61
+        static let leftCommand: UInt16 = 55
+        static let rightCommand: UInt16 = 54
         static let rightShift: UInt16 = 60
         static let space: UInt16 = 49
     }
@@ -110,6 +112,12 @@ final class InputController: IMKInputController {
         guard let event, let input = sender as? IMKTextInput else { return false }
         if event.type == .flagsChanged {
             MainActor.assumeIsolated {
+                // ⌘ going down: a held word goes in before the shortcut, since an app may act on
+                // the shortcut without showing it to the input method (Ghostty pastes on ⌘V itself).
+                if event.keyCode == KeyCode.leftCommand || event.keyCode == KeyCode.rightCommand,
+                   event.modifierFlags.contains(.command) {
+                    session.commandPressed(client: IMKClient(input))
+                }
                 pauseTapChanged(event, client: input)
                 switchTapChanged(event, client: input)
             }

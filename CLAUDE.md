@@ -125,7 +125,9 @@ tests use `FakeTextField`). It owns the preview and hysteresis, commits, Esc rea
   `。`), Delete only clears `heldBoundary`, and Space on it once switched to Japanese converts when
   the boundary is a space and commits when it is a symbol. One boundary only: the next letter,
   Return, a second symbol or Space, a digit, Tab, a shortcut or a focus change commits the word and
-  its boundary in one `insertText`. Ghostty sends text committed on a letter key as text and encodes nothing for a key
+  its boundary in one `insertText`, and so does ⌘ going down (`commandPressed`, from flagsChanged):
+  Ghostty acts on ⌘V itself without showing the input method the key, and pasted over the marked
+  text. A word without a boundary isn't committed by ⌘ (the next letters would start a new word). Ghostty sends text committed on a letter key as text and encodes nothing for a key
   the IME consumed while composing, which is what makes this work there; it reports its mouse
   selection as the caret, so the post-commit flip window can't.
 

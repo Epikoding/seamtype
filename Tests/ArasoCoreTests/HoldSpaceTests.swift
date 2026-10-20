@@ -183,6 +183,39 @@ import Testing
         #expect(field.text == "안녕 " && marked == nil)
     }
 
+    /// ⌘ going down puts the held word in before the shortcut: Ghostty pastes on ⌘V without showing
+    /// the input method the key, and would paste over the underlined word.
+    @Test func commandGoingDownCommitsTheHeldWordSoAPasteLandsAfterIt() {
+        type("dkssud ")
+        session.commandPressed(client: field)
+        #expect(field.text == "안녕 " && marked == nil)
+        #expect(field.insertions == ["안녕 "])
+        field.insertText("hello", replacing: nil) // the app's paste
+        #expect(field.text == "안녕 hello")
+    }
+
+    @Test(arguments: [".", "!"])
+    func commandGoingDownCommitsTheWordWithItsSymbol(symbol: String) {
+        type("dkssud" + symbol)
+        session.commandPressed(client: field)
+        #expect(field.text == "안녕" + symbol && marked == nil)
+    }
+
+    /// A word without a boundary keeps composing: a ⌘ pressed and let go must not split the next
+    /// letters off into a new word.
+    @Test func commandGoingDownLeavesAWordWithoutABoundaryComposing() {
+        type("dkss")
+        session.commandPressed(client: field)
+        #expect(marked != nil && field.insertions.isEmpty)
+        type("ud ")
+        #expect(field.text == "안녕 " && marked == "안녕 ")
+    }
+
+    @Test func commandGoingDownWithNothingTypedDoesNothing() {
+        session.commandPressed(client: field)
+        #expect(field.text == "" && field.insertions.isEmpty)
+    }
+
     @Test func aSecondSpaceAndPunctuationGoToTheApp() {
         type("dkssud  ")
         #expect(field.text == "안녕  " && marked == nil)

@@ -41,6 +41,7 @@ public protocol TextClient: AnyObject {
 ///   Return         commit the word as shown, and nothing else (the next Return is the app's);
 ///                  with `returnConfirmsOnly` off the app gets it too, except after Japanese
 ///   anything else  commit and let the app handle the key
+///   ⌘ going down   a held word goes in with its boundary before the shortcut (`commandPressed`)
 /// While converting to kanji (candidate window open):
 ///   Space / ↓      next candidate          ↑      previous candidate
 ///   1–9            commit that candidate   Return commit the selected candidate
@@ -486,6 +487,16 @@ public final class InputSession {
         case .shiftSpace: // handled above
             return false
         }
+    }
+
+    /// The ⌘ key went down. A held word goes in with its boundary now, before the shortcut: an
+    /// app that acts on the shortcut itself never shows the input method the key (Ghostty's
+    /// ⌘V is its own keybinding) and would paste over the underlined text. A word without a
+    /// boundary keeps composing: a ⌘ pressed and let go must not split the next letters off
+    /// into a new word.
+    public func commandPressed(client: TextClient) {
+        guard heldBoundary != nil else { return }
+        commit(client: client)
     }
 
     /// Commits whatever is in progress as-is (focus change, shortcut, deactivation).

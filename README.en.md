@@ -262,7 +262,9 @@ end the word but goes inside the underline too.
 
 - While underlined it is the word being typed: a language switch key changes it (`dkssud.` →
   `안녕.`, the mark stays as typed), and Delete deletes (the space or mark first).
-- Starting the next word puts it in with that character.
+- Starting the next word puts it in with that character. So does pressing ⌘, so a ⌘V pastes after
+  the word (a terminal pastes on ⌘V itself, without showing Araso the key); after that a switch key
+  can't change the word any more.
 - Only one character is held: after `안녕.` a Space or a second mark ends the word and is handled as
   with holding off (to the app, usually; after a word that went in as Japanese, by the rules for
   symbols after Japanese text).
