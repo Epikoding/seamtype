@@ -81,6 +81,7 @@ final class InputController: IMKInputController {
             session.commit(client: textInput(sender).map(textClient))
             candidatesWindow?.hide()
             ReadingsHUD.hide()
+            LearnedHUD.hide()
             Runtime.shared.converter?.save()
         }
         super.deactivateServer(sender)
@@ -91,6 +92,7 @@ final class InputController: IMKInputController {
             session.commitForNewContext(client: textInput(sender).map(textClient))
             candidatesWindow?.hide()
             ReadingsHUD.hide()
+            LearnedHUD.hide()
         }
     }
 
@@ -233,6 +235,7 @@ final class InputController: IMKInputController {
     @MainActor private func togglePause(client: IMKTextInput?) {
         session.togglePause(client: client.map(textClient))
         ReadingsHUD.hide()
+        LearnedHUD.hide()
         PauseHUD.show(paused: session.paused, caret: client.map(caretRect) ?? .zero)
         log.info("paused=\(self.session.paused) app=\(self.session.app ?? "?", privacy: .public)")
     }
