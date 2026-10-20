@@ -114,6 +114,9 @@ final class FakeTextField: TextClient {
         #expect(session.readings == InputSession.Readings(texts: ["dkssud", "안녕"], selected: 1))
         type("a")
         #expect(session.readings == nil)
+        type(" githubdp")
+        session.handle(.escape, client: field)
+        #expect(session.readings?.texts == ["githubdp", "github에"]) // a garbled reading isn't listed
     }
 
     /// One Esc changes only that word (a habitual Esc shouldn't stick); the same

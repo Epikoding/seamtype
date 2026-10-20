@@ -190,7 +190,9 @@ While a word is being typed it is underlined and shows the language Araso expect
 | Esc / Delete | back to the kana |
 | letters, punctuation | commit, then keep typing |
 
-Conversion goes clause by clause: a candidate that covers only the start of the reading (`今日は`
+Conversion goes clause by clause. The clause the candidates are for is underlined thick and the rest
+of the reading thin, so you see where ←/→ put the boundary (apps that ignore underline styles show one
+line). A candidate that covers only the start of the reading (`今日は`
 for きょうはいいてんきですね) commits that part and keeps converting the rest. The candidate window lists
 every homophone the engine has, rare kanji toward the end (`硝` for しょう).
 
@@ -224,6 +226,10 @@ Choose the keys that switch readings in the settings window's **Keys** pane, key
 right ⌥ tapped alone, ⌥Space, right ⇧ tapped alone, Esc and ⇧Esc, as many as you like. By default
 they are **right ⌥ tapped alone** and **⇧Esc**. A key not chosen goes to the app.
 
+Pressing one lists the word's readings under it in order (`dkssud · 안녕`, `githubdp · github에`), the one on
+screen highlighted, so you see how many more presses reach the one you want; any other key puts
+the list away.
+
 - **Right ⌥ or right ⇧ tapped alone**: apps don't react to a lone modifier, so it never closes a
   window or clears input. A tap with other modifiers isn't taken, so a key remapped as a Hyper key
   (⌃⌥⇧⌘ at once, by Raycast or Karabiner) keeps doing what it's bound to; choose another key then.
@@ -249,7 +255,9 @@ A word corrected once leans that way from then on: a close call (`so`/`내`) tur
 doesn't, so a stray switch doesn't do much. It is forgotten after 30 days unless corrected or typed
 that way again. Correct the same keys the same way a second time and Araso always writes them so, also with a
 particle after them (remember `ghostty` and you get `ghostty에`);
-switching a word back to Araso's own guess forgets it. Long tokens (over 20 keys, such as a
+switching a word back to Araso's own guess forgets it. When a word sticks, `안녕 → always Korean`
+shows under the caret for a moment; if that was a mistake, choose **Undo Last Learned** in the
+input menu. Long tokens (over 20 keys, such as a
 sentence switched as one) aren't remembered.
 
 <details>
