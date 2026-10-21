@@ -14,6 +14,7 @@
 
 <p align="center">
   <a href="https://github.com/nyttastudio/araso/releases/latest"><img src="https://img.shields.io/github/v/release/nyttastudio/araso?style=flat-square&label=release" alt="Latest release"></a>
+  <a href="https://github.com/nyttastudio/araso/stargazers"><img src="https://img.shields.io/github/stars/nyttastudio/araso?style=flat-square&label=stars" alt="Stars"></a>
   <a href="https://github.com/nyttastudio/araso/releases"><img src="https://img.shields.io/github/downloads/nyttastudio/araso/total?style=flat-square" alt="Downloads"></a>
   <img src="https://img.shields.io/badge/macOS-13%2B-555?style=flat-square&logo=apple" alt="macOS 13 or later">
   <img src="https://img.shields.io/badge/Apple%20Silicon%20%7C%20Intel-555?style=flat-square" alt="Apple silicon and Intel">
@@ -281,7 +282,9 @@ end the word but goes inside the underline too.
 
 - While underlined it is the word being typed: a language switch key changes it (`dkssud.` →
   `안녕.`, the mark stays as typed), and Delete deletes (the space or mark first).
-- Starting the next word puts it in with that character.
+- Starting the next word puts it in with that character. So does pressing ⌘, so a ⌘V pastes after
+  the word (a terminal pastes on ⌘V itself, without showing Araso the key); after that a switch key
+  can't change the word any more.
 - Only one character is held: after `안녕.` a Space or a second mark ends the word and is handled as
   with holding off (to the app, usually; after a word that went in as Japanese, by the rules for
   symbols after Japanese text).

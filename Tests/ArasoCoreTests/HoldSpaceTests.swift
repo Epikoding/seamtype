@@ -183,6 +183,57 @@ import Testing
         #expect(field.text == "안녕 " && marked == nil)
     }
 
+    /// ⌘ going down puts the held word in before the shortcut: Ghostty pastes on ⌘V without showing
+    /// the input method the key, and would paste over the underlined word.
+    @Test func commandGoingDownCommitsTheHeldWordSoAPasteLandsAfterIt() {
+        type("dkssud ")
+        session.commandPressed(client: field)
+        #expect(field.text == "안녕 " && marked == nil)
+        #expect(field.insertions == ["안녕 "])
+        field.insertText("hello", replacing: nil) // the app's paste
+        #expect(field.text == "안녕 hello")
+    }
+
+    @Test(arguments: [".", "!"])
+    func commandGoingDownCommitsTheWordWithItsSymbol(symbol: String) {
+        type("dkssud" + symbol)
+        session.commandPressed(client: field)
+        #expect(field.text == "안녕" + symbol && marked == nil)
+    }
+
+    /// A word without a boundary keeps composing: a ⌘ pressed and let go must not split the next
+    /// letters off into a new word.
+    @Test func commandGoingDownLeavesAWordWithoutABoundaryComposing() {
+        type("dkss")
+        session.commandPressed(client: field)
+        #expect(marked != nil && field.insertions.isEmpty)
+        type("ud ")
+        #expect(field.text == "안녕 " && marked == "안녕 ")
+    }
+
+    /// Ghostty's ⌘V reaches the input method only as ⌘ going down, so the pasted text is read
+    /// from the field: a pasted URL makes the next segment typed English.
+    @Test func aURLPastedAfterCommandCounts() {
+        type("dkssud ")
+        session.commandPressed(client: field)
+        field.insertText("https://x.io/", replacing: nil) // the app's paste
+        type("dl ")
+        #expect(field.text == "안녕 https://x.io/dl ")
+    }
+
+    /// After ⌘ the word is in the app: a switch key no longer changes it.
+    @Test func aSwitchKeyAfterCommandLeavesTheWordAsItWent() {
+        type("dkssud ")
+        session.commandPressed(client: field)
+        session.handle(.cycle, client: field)
+        #expect(field.text == "안녕 " && marked == nil)
+    }
+
+    @Test func commandGoingDownWithNothingTypedDoesNothing() {
+        session.commandPressed(client: field)
+        #expect(field.text == "" && field.insertions.isEmpty)
+    }
+
     @Test func aSecondSpaceAndPunctuationGoToTheApp() {
         type("dkssud  ")
         #expect(field.text == "안녕  " && marked == nil)
