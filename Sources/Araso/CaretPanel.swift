@@ -74,8 +74,9 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
 /// The readings a switch key goes through for the word it changed, a list dropped under the
 /// word with each reading's language and the one on screen highlighted, until the next key
 /// (`InputSession.readings`). Rows fall in one after another; on the next switch the highlight
-/// springs to its row and the reading there unscrambles into place. Everything is over in
-/// about 0.2 s, and the next key cuts it short: the user is in the middle of typing.
+/// springs to its row, and only the highlight moves: the readings stay still, so fast presses
+/// leave them readable. Everything is over in about 0.2 s, and the next key cuts it short: the
+/// user is in the middle of typing.
 @MainActor enum ReadingsHUD {
     private static var panel: NSPanel?
     private static var shown: InputSession.Readings?
@@ -86,10 +87,9 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
     /// switching back), a dotted ring around one corrected once, which another correction moves the
     /// pill to. Shapes, not colours, so they read on the highlight too.
     private static var records: [(row: Int, layer: CAShapeLayer, pill: Bool)] = []
-    /// Bumped on every show and hide, so a fade or a scramble left from before stops.
+    /// Bumped on every show and hide, so a fade left from before stops.
     private static var generation = 0
     private static var hiding = false
-    private static var scramble: Timer?
 
     private static let rowHeight: CGFloat = 24
     private static let inset: CGFloat = 3
@@ -113,7 +113,6 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
         guard let panel, panel.isVisible, !hiding else { return }
         generation += 1
         let current = generation
-        scramble?.invalidate()
         hiding = true
         shown = nil
         animate(0.08, CAMediaTimingFunction(name: .easeIn), { panel.animator().alphaValue = 0 }) {
@@ -128,7 +127,6 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
     }
 
     private static func build(_ readings: InputSession.Readings, caret: NSRect) {
-        scramble?.invalidate()
         hiding = false
         let panel = panel ?? CaretPanel.make(size: .zero)
         self.panel = panel
@@ -230,7 +228,7 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
         animate(0.12, nil, { highlight?.animator().alphaValue = 1 })
     }
 
-    /// The next switch: the highlight springs to its row and the reading there unscrambles.
+    /// The next switch: the highlight springs to its row.
     private static func select(_ index: Int, from previous: Int) {
         guard rows.indices.contains(index), let highlight else { return }
         // Rows still falling in land at once: a fast second press shouldn't wait for them.
@@ -242,7 +240,6 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
         animate(0.22, springy, { highlight.animator().frame = rowFrame(index, width: highlight.frame.width) })
         color(selected: index)
         panel?.contentView?.setAccessibilityLabel(L("Readings, %@ selected", rows[index].text.stringValue))
-        unscramble(rows[index].text)
     }
 
     private static func color(selected: Int) {
@@ -267,36 +264,6 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
                 }
             }
             CATransaction.commit()
-        }
-    }
-
-    /// Letters, jamo-built syllables and kana a reading flickers through.
-    private static let pool = Array("abcdefghkmnrstuvz가나다라마바사아자하あいうえおかきくけこ")
-
-    /// The reading flickers through random letters for about 0.1 s, settling from the left:
-    /// a new reading decoded, not just swapped. Four frames, the same length as the reading, so
-    /// the row doesn't change width.
-    private static func unscramble(_ label: NSTextField) {
-        scramble?.invalidate()
-        let target = Array(label.stringValue)
-        guard !reduceMotion, !target.isEmpty else { return }
-        let current = generation
-        var frame = 0
-        func step() {
-            frame += 1
-            let settled = target.count * frame / 4
-            label.stringValue = String(target.indices.map { $0 < settled ? target[$0] : pool.randomElement()! })
-        }
-        step()
-        scramble = Timer.scheduledTimer(withTimeInterval: 0.025, repeats: true) { timer in
-            MainActor.assumeIsolated {
-                guard current == generation, frame < 4 else {
-                    timer.invalidate()
-                    label.stringValue = String(target)
-                    return
-                }
-                step()
-            }
         }
     }
 
