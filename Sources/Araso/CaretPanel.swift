@@ -134,7 +134,12 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
 
         let tags = readings.languages.map { label($0.readingTag, size: 11) }
         let texts = readings.texts.map { label($0, size: 14) }
-        let tagWidth = tags.map(\.fittingSize.width).max() ?? 0
+        // Measured in the semibold a remembered reading's tag takes, so no tag outgrows its column.
+        let tagWidth = readings.languages.map { language -> CGFloat in
+            let bold = label(language.readingTag, size: 11)
+            bold.font = .systemFont(ofSize: 11, weight: .semibold)
+            return bold.fittingSize.width
+        }.max() ?? 0
         let textWidth = min(texts.map(\.fittingSize.width).max() ?? 0, 240)
         var recorded: [Int: Bool] = [:] // row: remembered (else corrected once)
         if let row = readings.once { recorded[row] = false }
@@ -169,8 +174,9 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
             let (tag, text) = pair
             let row = NSView(frame: rowFrame(index, width: rowWidth))
             row.wantsLayer = true
+            // Centred in its column, with room to spare: at its exact width a centred label truncates.
             tag.alignment = .center
-            tag.frame = NSRect(x: 8, y: (rowHeight - tag.fittingSize.height) / 2, width: ceil(tagWidth), height: tag.fittingSize.height)
+            tag.frame = NSRect(x: 6, y: (rowHeight - tag.fittingSize.height) / 2, width: ceil(tagWidth) + 4, height: tag.fittingSize.height)
             text.frame = NSRect(x: 8 + ceil(tagWidth) + 6, y: (rowHeight - text.fittingSize.height) / 2,
                                 width: ceil(textWidth) + 2, height: text.fittingSize.height)
             row.addSubview(tag)
@@ -180,8 +186,8 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
         }
         records = recorded.map { row, remembered in
             let tag = rows[row].tag
-            // Around the tag's letters, a little wider than them, the row's height less a margin.
-            let box = NSRect(x: tag.frame.minX - 2.5, y: (rowHeight - 16) / 2, width: tag.frame.width + 5, height: 16)
+            // Around the tag's column, the row's height less a margin.
+            let box = NSRect(x: tag.frame.minX - 0.5, y: (rowHeight - 16) / 2, width: tag.frame.width + 1, height: 16)
             let layer = CAShapeLayer()
             layer.path = CGPath(roundedRect: box, cornerWidth: 4, cornerHeight: 4, transform: nil)
             layer.lineWidth = remembered ? 0 : 1.3
