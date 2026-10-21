@@ -352,8 +352,10 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
     private static var shown = 0
     private static let size = NSSize(width: 20, height: 16)
 
-    static func show(_ learned: InputSession.Learned, caret: NSRect) {
-        guard caret != .zero, let mark = MarkIcon(size: size) else { return }
+    /// `word` is the word's rect in screen coordinates (its last line, as the app reports it);
+    /// the mark sits over its right end.
+    static func show(_ learned: InputSession.Learned, word: NSRect) {
+        guard word != .zero, let mark = MarkIcon(size: size) else { return }
         let panel = panel ?? CaretPanel.make(size: size)
         self.panel = panel
         panel.contentView = mark
@@ -363,10 +365,10 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
 
         // Over the word's last letter, just above its line; below the line only where the
         // line is at the top of the screen.
-        var origin = NSPoint(x: caret.minX - 14, y: caret.maxY + 1)
-        if let visible = (NSScreen.screens.first { $0.frame.contains(caret.origin) } ?? NSScreen.main)?.visibleFrame,
+        var origin = NSPoint(x: word.maxX - size.width + 2, y: word.maxY + 1)
+        if let visible = (NSScreen.screens.first { $0.frame.contains(word.origin) } ?? NSScreen.main)?.visibleFrame,
            origin.y + size.height > visible.maxY {
-            origin.y = caret.minY - size.height - 1
+            origin.y = word.minY - size.height - 1
         }
         let landed = NSRect(origin: origin, size: size)
         panel.setFrame(reduceMotion ? landed : landed.offsetBy(dx: 0, dy: 8), display: true)

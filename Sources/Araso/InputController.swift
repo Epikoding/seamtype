@@ -21,6 +21,10 @@ final class InputController: IMKInputController {
     /// Which switch key (right ⌥ or right ⇧, in `AppPolicy.switchKeys`) went down and when,
     /// while no other key has been pressed with it: a tap switches the word's language.
     private var switchTapDown: (key: UInt16, at: Date)?
+    /// The underlined word's place on screen, as last asked while it was still underlined: where
+    /// a learned word's mark goes once the word went in (apps place the caret unreliably then;
+    /// TextEdit answered with the same column two lines up).
+    private var wordRect: NSRect?
 
     /// This client's session, rebuilt (after committing what was being typed) when a setting changed.
     @MainActor private var session: InputSession {
@@ -140,6 +144,7 @@ final class InputController: IMKInputController {
                 return true
             }
             let key = key(for: event)
+            noteWordRect(input)
             let handled = session.handle(key, client: textClient(input))
             syncCandidates()
             syncCaretPanels(input)
@@ -213,6 +218,7 @@ final class InputController: IMKInputController {
               Date().timeIntervalSince(down.at) < 0.5 else { return }
         switchTapDown = nil
         guard !session.inVimNormalMode else { return } // vim's own keys
+        noteWordRect(client)
         let handled = session.handle(.cycle, client: textClient(client))
         syncCandidates()
         syncCaretPanels(client)
@@ -228,7 +234,19 @@ final class InputController: IMKInputController {
         } else {
             ReadingsHUD.hide()
         }
-        if let learned = session.learned { LearnedHUD.show(learned, caret: caretRect(client)) }
+        if let learned = session.learned { LearnedHUD.show(learned, word: wordRect ?? caretRect(client)) }
+    }
+
+    /// Asks where the word being typed is while it is underlined; kept from before a key that
+    /// commits it, for the mark that may follow.
+    @MainActor private func noteWordRect(_ client: IMKTextInput) {
+        let marked = client.markedRange()
+        guard marked.location != NSNotFound, marked.length > 0 else { return }
+        var actual = NSRange(location: NSNotFound, length: 0)
+        let rect = client.firstRect(forCharacterRange: marked, actualRange: &actual)
+        // Positions only, never text.
+        log.info("word rect \(rect.debugDescription, privacy: .public)")
+        if rect.height > 0 { wordRect = rect }
     }
 
     /// Pauses or resumes this text field, and says so under the caret.
@@ -252,7 +270,7 @@ final class InputController: IMKInputController {
             var actual = NSRange(location: NSNotFound, length: 0)
             rect = client.firstRect(forCharacterRange: NSRange(location: selected.location, length: 0), actualRange: &actual)
             // Positions only, never text.
-            log.debug("caret from selection \(rect.debugDescription, privacy: .public)")
+            log.info("caret from selection \(rect.debugDescription, privacy: .public)")
             if rect.height > 0 { return rect }
         }
         _ = client.attributes(forCharacterIndex: 0, lineHeightRectangle: &rect)
