@@ -118,8 +118,12 @@ public final class InputSession {
         /// Each reading's language, for its tag in the list.
         public let languages: [Language]
         public let selected: Int
-        /// The reading the user's dictionary gives these keys, when it has one that wins.
+        /// The reading the user's dictionary gives these keys, when it has one that wins (learned
+        /// for good or added by hand).
         public var remembered: Int? = nil
+        /// The reading the keys were corrected to once: the engine leans to it, and choosing it
+        /// again learns it for good.
+        public var once: Int? = nil
     }
 
     /// A word the user corrected the same way twice, learned for good just now: the input method
@@ -1233,7 +1237,8 @@ public final class InputSession {
         guard cycle.count > 1, let selected = cycle.firstIndex(of: language) else { return nil }
         let own = engine.decide(keys, context: DecisionContext(app: app))
         return Readings(texts: cycle.map { rendered(keys, $0) }, languages: cycle, selected: selected,
-                        remembered: own.remembered == nil ? nil : cycle.firstIndex(of: own.language))
+                        remembered: own.remembered == nil ? nil : cycle.firstIndex(of: own.language),
+                        once: engine.nudge(for: keys, app: app).flatMap { cycle.firstIndex(of: $0) })
     }
 
     /// The word being composed as the marked text, with its boundary while it is held.

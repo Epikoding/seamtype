@@ -111,7 +111,8 @@ final class FakeTextField: TextClient {
         #expect(session.readings == nil)
         session.handle(.escape, client: field)
         #expect(field.text == "안녕 ")
-        #expect(session.readings == InputSession.Readings(texts: ["dkssud", "안녕"], languages: [.english, .korean], selected: 1))
+        // dkssud went in as English once: that reading is marked as corrected once.
+        #expect(session.readings == InputSession.Readings(texts: ["dkssud", "안녕"], languages: [.english, .korean], selected: 1, once: 0))
         type("a")
         #expect(session.readings == nil)
         type(" githubdp")
@@ -140,6 +141,21 @@ final class FakeTextField: TextClient {
         #expect(session.engine.recentlyApplied.map(\.keys) == ["ghostty", "chrao"]) // switched: not the dictionary's
         session.engine.forget("ghostty")
         #expect(session.engine.recentlyApplied.map(\.keys) == ["chrao"])
+    }
+
+    /// The switch key's list tells a reading corrected once from one learned for good.
+    @Test func readingsTellOnceFromForGood() {
+        type("rjtm ")
+        session.handle(.escape, client: field) // once
+        let flipped = session.readings!.languages[session.readings!.selected]
+        type("x rjtm")
+        session.handle(.escape, client: field)
+        #expect(session.readings?.once == session.readings?.languages.firstIndex(of: flipped))
+        #expect(session.readings?.remembered == nil)
+        type(" x rjtm") // that went in as the correction again: learned for good
+        session.handle(.escape, client: field)
+        #expect(session.readings?.remembered == session.readings?.languages.firstIndex(of: flipped))
+        #expect(session.readings?.once == nil)
     }
 
     /// One Esc changes only that word (a habitual Esc shouldn't stick); the same

@@ -256,12 +256,13 @@ A word corrected once leans that way from then on: a close call (`so`/`내`) tur
 doesn't, so a stray switch doesn't do much. It is forgotten after 30 days unless corrected or typed
 that way again. Correct the same keys the same way a second time and Araso always writes them so, also with a
 particle after them (remember `ghostty` and you get `ghostty에`);
-switching a word back to Araso's own guess forgets it. When a word sticks, `안녕 → always Korean`
-shows under the caret for a moment, Araso's mark spinning through A, 아 and あ to stop on that language.
+switching a word back to Araso's own guess forgets it. When a word sticks, a bookmark drops onto the end
+of the word for a moment. In the switch key's list, a reading corrected once carries a hollow
+bookmark, and one Araso always uses (corrected twice, or a word you added yourself) a filled one.
 To tell whether a word went in because of the dictionary, open **Changed by the Dictionary** in the
 input menu: it lists the last five words the dictionary decided, as `ghostty → English`, and choosing
-one forgets it (the list is kept only until the input method restarts, and never saved). The switch
-key's list also puts a bookmark on the remembered reading. Words you added yourself show the same; if that was a mistake, choose **Undo Last Learned** in the
+one forgets it (the list is kept only until the input method restarts, and never saved). If a word
+stuck by mistake, choose **Undo Last Learned** in the
 input menu. Long tokens (over 20 keys, such as a
 sentence switched as one) aren't remembered.
 

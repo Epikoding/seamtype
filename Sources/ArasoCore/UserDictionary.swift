@@ -267,6 +267,11 @@ public final class DictionaryEngine: DecisionEngine, @unchecked Sendable {
     }
 
     /// `UserDictionary.languageEntry`, from the index: the app's own entry, else the one for every app.
+    /// The language the keys were corrected to once (a weak entry), the one the engine leans to.
+    public func nudge(for keys: String, app: String?) -> Language? {
+        lock.withLock { entry(for: keys, app: app).flatMap { $0.strength == .weak ? $0.language : nil } }
+    }
+
     private func entry(for keys: String, app: String?) -> UserDictionary.Entry? {
         let matching = (byKeys[keys] ?? []).filter { $0.applies(to: app) }
         return matching.first { $0.apps != nil } ?? matching.first

@@ -52,15 +52,6 @@ private extension Language {
         case .mixed: return L("MIX")
         }
     }
-
-    /// The glyph of Araso's mark (A, 아, あ) that stands for the language.
-    var markGlyph: String {
-        switch self {
-        case .english, .mixed: return "A"
-        case .korean: return "아"
-        case .japanese: return "あ"
-        }
-    }
 }
 
 /// Motion keeps out of the way of typing: each animation is short, and none when the user
@@ -90,8 +81,9 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
     private static var shown: InputSession.Readings?
     private static var highlight: NSView?
     private static var rows: [(view: NSView, tag: NSTextField, text: NSTextField)] = []
-    /// The bookmark on the reading the user's dictionary gives the keys.
-    private static var bookmark: (row: Int, view: NSImageView)?
+    /// The bookmarks on the readings the dictionary knows: filled on the one it gives the keys,
+    /// hollow on the one they were corrected to once.
+    private static var bookmarks: [(row: Int, view: NSImageView)] = []
     /// Bumped on every show and hide, so a fade or a scramble left from before stops.
     private static var generation = 0
     private static var hiding = false
@@ -143,8 +135,9 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
         let texts = readings.texts.map { label($0, size: 14) }
         let tagWidth = tags.map(\.fittingSize.width).max() ?? 0
         let textWidth = min(texts.map(\.fittingSize.width).max() ?? 0, 240)
-        let mark = readings.remembered.flatMap { readings.texts.indices.contains($0) ? $0 : nil }
-        let rowWidth = max(8 + ceil(tagWidth) + 6 + ceil(textWidth) + (mark == nil ? 10 : 24), 96)
+        let marks = [(readings.remembered, "bookmark.fill", L("Remembered")), (readings.once, "bookmark", L("Corrected once"))]
+            .compactMap { row, symbol, name in row.flatMap { readings.texts.indices.contains($0) ? ($0, symbol, name) : nil } }
+        let rowWidth = max(8 + ceil(tagWidth) + 6 + ceil(textWidth) + (marks.isEmpty ? 10 : 24), 96)
         let size = NSSize(width: rowWidth + inset * 2, height: CGFloat(texts.count) * rowHeight + inset * 2)
 
         let background = NSVisualEffectView(frame: NSRect(origin: .zero, size: size))
@@ -181,13 +174,13 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
             content.addSubview(row)
             return (row, tag, text)
         }
-        bookmark = nil
-        if let mark, let symbol = NSImage(systemSymbolName: "bookmark.fill", accessibilityDescription: L("Remembered")) {
-            let view = NSImageView(image: symbol)
+        bookmarks = marks.compactMap { row, symbol, name in
+            guard let image = NSImage(systemSymbolName: symbol, accessibilityDescription: name) else { return nil }
+            let view = NSImageView(image: image)
             view.symbolConfiguration = .init(pointSize: 10, weight: .medium)
             view.frame = NSRect(x: rowWidth - 20, y: (rowHeight - 12) / 2, width: 12, height: 12)
-            rows[mark].view.addSubview(view)
-            bookmark = (mark, view)
+            rows[row].view.addSubview(view)
+            return (row, view)
         }
         color(selected: readings.selected)
 
@@ -241,7 +234,7 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
             row.text.textColor = i == selected ? .alternateSelectedControlTextColor : .labelColor
             row.tag.textColor = i == selected ? .alternateSelectedControlTextColor : .secondaryLabelColor
         }
-        if let bookmark {
+        for bookmark in bookmarks {
             bookmark.view.contentTintColor = bookmark.row == selected ? .alternateSelectedControlTextColor : .controlAccentColor
         }
     }
@@ -284,83 +277,48 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
     }
 }
 
-/// A word learned for good just now (`InputSession.learned`), said for a moment under the caret
-/// in the system indicator's colors, as PauseHUD is. Araso's mark spins A·아·あ like a slot
-/// reel and lands on the language the word goes in as from now on, then the words come in;
-/// the input menu's undo takes it back.
+/// A word learned for good just now (`InputSession.learned`): a bookmark drops onto the end
+/// of the word for a moment, the same bookmark the switch key's list puts on a remembered
+/// reading. It sits in the gap above the line, so the text typed on doesn't run under it; the
+/// input menu lists the word and takes it back.
 @MainActor enum LearnedHUD {
     private static var panel: NSPanel?
     private static var shown = 0
-
-    private static let height: CGFloat = 26
-    private static let glyph: CGFloat = 18
-    private static let gap: CGFloat = 4
+    private static let size = NSSize(width: 14, height: 16)
 
     static func show(_ learned: InputSession.Learned, caret: NSRect) {
-        guard caret != .zero else { return }
-        let panel = panel ?? CaretPanel.make(size: .zero)
+        guard caret != .zero,
+              let image = NSImage(systemSymbolName: "bookmark.fill",
+                                  accessibilityDescription: L("%@ → always %@", learned.text, learned.language.displayName))
+        else { return }
+        let panel = panel ?? CaretPanel.make(size: size)
         self.panel = panel
+        let view = NSImageView(frame: NSRect(origin: .zero, size: size))
+        view.image = image
+        view.symbolConfiguration = .init(pointSize: 13, weight: .semibold)
+        view.contentTintColor = .controlAccentColor
+        view.wantsLayer = true
+        panel.contentView = view
 
-        let text = NSTextField(labelWithString: L("%@ → always %@", learned.text, learned.language.displayName))
-        text.font = .systemFont(ofSize: 13, weight: .medium)
-        text.textColor = .white
-        let textSize = text.fittingSize
-        let size = NSSize(width: 4 + glyph + 7 + ceil(textSize.width) + 12, height: height)
-
-        let capsule = FlippedView(frame: NSRect(origin: .zero, size: size))
-        capsule.wantsLayer = true
-        capsule.layer?.cornerRadius = height / 2
-        capsule.layer?.cornerCurve = .continuous
-        let accent = NSColor.controlAccentColor.usingColorSpace(.sRGB) ?? .systemBlue
-        // The system indicator's blue, as PauseHUD draws it.
-        let fill = NSColor(displayP3Red: accent.redComponent, green: accent.greenComponent, blue: accent.blueComponent, alpha: 1)
-        capsule.layer?.backgroundColor = fill.cgColor
-
-        // The reel: A·아·あ twice, then the language's own, scrolled up behind a round window.
-        let window = FlippedView(frame: NSRect(x: 4, y: (height - glyph) / 2, width: glyph, height: glyph))
-        window.wantsLayer = true
-        window.layer?.cornerRadius = glyph / 2
-        window.layer?.masksToBounds = true
-        window.layer?.backgroundColor = NSColor.white.cgColor
-        let glyphs = ["A", "아", "あ", "A", "아", "あ", learned.language.markGlyph]
-        let reel = FlippedView(frame: NSRect(x: 0, y: 0, width: glyph, height: glyph * CGFloat(glyphs.count)))
-        for (index, character) in glyphs.enumerated() {
-            let label = NSTextField(labelWithString: character)
-            label.font = .systemFont(ofSize: 11, weight: .semibold)
-            label.textColor = fill
-            let fit = label.fittingSize
-            label.frame = NSRect(x: (glyph - fit.width) / 2, y: CGFloat(index) * glyph + (glyph - fit.height) / 2,
-                                 width: fit.width, height: fit.height)
-            reel.addSubview(label)
+        // Over the word's last letter, just above its line; below the line only where the
+        // line is at the top of the screen.
+        var origin = NSPoint(x: caret.minX - 12, y: caret.maxY + 1)
+        if let visible = (NSScreen.screens.first { $0.frame.contains(caret.origin) } ?? NSScreen.main)?.visibleFrame,
+           origin.y + size.height > visible.maxY {
+            origin.y = caret.minY - size.height - 1
         }
-        window.addSubview(reel)
-        capsule.addSubview(window)
-
-        text.frame = NSRect(x: 4 + glyph + 7, y: (height - textSize.height) / 2, width: ceil(textSize.width) + 2, height: textSize.height)
-        capsule.addSubview(text)
-        capsule.setAccessibilityElement(true)
-        capsule.setAccessibilityLabel(text.stringValue)
-
-        panel.contentView = capsule
-        panel.setFrame(NSRect(origin: CaretPanel.origin(for: size, caret: caret, gap: gap, centered: true), size: size),
-                       display: true)
-        panel.alphaValue = 1
+        let landed = NSRect(origin: origin, size: size)
+        panel.setFrame(reduceMotion ? landed : landed.offsetBy(dx: 0, dy: 10), display: true)
+        panel.alphaValue = reduceMotion ? 1 : 0
         panel.orderFrontRegardless()
+        animate(0.24, springy, {
+            panel.animator().setFrame(landed, display: true)
+            panel.animator().alphaValue = 1
+        })
 
         shown += 1
         let current = shown
-        let landed = NSPoint(x: 0, y: -glyph * CGFloat(glyphs.count - 1))
-        if reduceMotion {
-            reel.setFrameOrigin(landed)
-        } else {
-            text.alphaValue = 0
-            animate(0.8, CAMediaTimingFunction(controlPoints: 0.2, 0.7, 0.25, 1.15), { reel.animator().setFrameOrigin(landed) })
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
-                guard current == shown else { return }
-                animate(0.2, nil, { text.animator().alphaValue = 1 })
-            }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + (reduceMotion ? 1.8 : 2.4)) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
             guard current == shown else { return }
             animate(0.25, nil, { panel.animator().alphaValue = 0 }) {
                 if current == shown { panel.orderOut(nil) }
