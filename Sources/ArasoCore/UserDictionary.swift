@@ -9,7 +9,8 @@ import Foundation
 /// `from: user` entries were added by hand and stay until removed. `from: learned` ones come
 /// from corrections with the switch key: corrected once they are `weak` and only nudge the
 /// decision (and are dropped after `weakLifetime` days unused), corrected the same way again
-/// they are `sure` and win.
+/// they are `sure` and win. A sure word switched once to another reading notes it (`next`):
+/// switched there again, that reading is remembered instead; typed as remembered, the note goes.
 public struct UserDictionary: Equatable, Sendable {
     public struct Entry: Codable, Equatable, Sendable, Identifiable {
         public enum Source: String, Codable, Sendable { case user, learned }
@@ -26,9 +27,11 @@ public struct UserDictionary: Equatable, Sendable {
         public var apps: [String]?
         /// The day a learned entry was last corrected or typed (`yyyy-MM-dd`).
         public var last: String?
+        /// A sure entry's word was switched once to this reading since it was last typed as remembered.
+        public var next: Language?
 
         enum CodingKeys: String, CodingKey {
-            case keys, language = "as", text, source = "from", strength, apps, last
+            case keys, language = "as", text, source = "from", strength, apps, last, next
         }
 
         public init(keys: String, language: Language? = nil, text: String? = nil, source: Source,
@@ -98,6 +101,7 @@ public struct UserDictionary: Equatable, Sendable {
         entries[index].source = .user
         entries[index].strength = nil
         entries[index].last = nil
+        entries[index].next = nil
         return true
     }
 
@@ -114,13 +118,27 @@ public struct UserDictionary: Equatable, Sendable {
         guard !keys.isEmpty, !entries.contains(where: { $0.keys == keys && $0.forEveryApp && $0.source == .user }) else { return false }
         let index = entries.firstIndex { $0.keys == keys && $0.forEveryApp && $0.source == .learned }
         let current = index.map { entries[$0] }
-        if current?.language == language, current?.strength == .sure { return false }
+        if let index, current?.language == language, current?.strength == .sure {
+            entries[index].next = nil // chosen as remembered: a switch noted since was a slip
+            return false
+        }
         // Back to what the engine showed, or away from what a weak entry turned it to: the
         // nudge was wrong, and a weak entry for the reading switched back to isn't a correction.
         let rejected = current?.strength == .weak && current?.language == shown
         if language == shown || rejected {
             if let index { entries.remove(at: index) }
             return false
+        }
+        // A remembered word switched to yet another reading (switching back to Araso's own forgets
+        // it before this): the memory stays until the same switch comes a second time.
+        if let index, current?.strength == .sure {
+            entries[index].last = Self.day(today)
+            guard entries[index].next == language else {
+                entries[index].next = language
+                return false
+            }
+            entries[index] = Entry(keys: keys, language: language, source: .learned, strength: .sure, last: Self.day(today))
+            return true
         }
         guard keys.count <= Self.longestLearned else { return false }
         let sure = current?.language == language
@@ -130,10 +148,16 @@ public struct UserDictionary: Equatable, Sendable {
         return sure
     }
 
-    /// A weak entry's word went in as it says: it is still in use, so it stays.
+    /// A weak entry's word went in as it says: it is still in use, so it stays. A sure one's
+    /// did: a switch away from it noted since was a slip.
     /// Returns true when something changed.
     public mutating func used(_ keys: String, as language: Language, today: Date) -> Bool {
         let day = Self.day(today)
+        if let index = entries.firstIndex(where: { $0.keys == keys && $0.forEveryApp && $0.strength == .sure && $0.next != nil }),
+           entries[index].language == language {
+            entries[index].next = nil
+            return true
+        }
         guard let index = entries.firstIndex(where: { $0.keys == keys && $0.forEveryApp && $0.strength == .weak }),
               entries[index].language == language, entries[index].last != day else { return false }
         entries[index].last = day
@@ -278,6 +302,12 @@ public final class DictionaryEngine: DecisionEngine, @unchecked Sendable {
     /// The language the keys were corrected to once (a weak entry), the one the engine leans to.
     public func nudge(for keys: String, app: String?) -> Language? {
         lock.withLock { entry(for: keys, app: app).flatMap { $0.strength == .weak ? $0.language : nil } }
+    }
+
+    /// The reading the keys were switched to once and would be remembered as the next time:
+    /// a weak entry's, or the one a remembered word was switched to (`Entry.next`).
+    public func correctedOnce(_ keys: String, app: String?) -> Language? {
+        lock.withLock { entry(for: keys, app: app).flatMap { $0.strength == .weak ? $0.language : $0.next } }
     }
 
     private func entry(for keys: String, app: String?) -> UserDictionary.Entry? {
@@ -525,7 +555,7 @@ public final class DictionaryEngine: DecisionEngine, @unchecked Sendable {
                 lastLearnedKeys = keys
                 learning = .forGood
             } else if store != before, store.entries.contains(where: {
-                $0.keys == keys && $0.forEveryApp && $0.strength == .weak && $0.language == language
+                $0.keys == keys && $0.forEveryApp && ($0.strength == .weak && $0.language == language || $0.next == language)
             }) {
                 learning = .once
             } else if before.entries.contains(where: learned), !store.entries.contains(where: learned) {

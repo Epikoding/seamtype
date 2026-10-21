@@ -1241,7 +1241,7 @@ public final class InputSession {
         guard cycle.count > 1, let selected = cycle.firstIndex(of: language) else { return nil }
         return Readings(texts: cycle.map { rendered(keys, $0) }, languages: cycle, selected: selected,
                         pick: cycle.firstIndex(of: pick),
-                        once: engine.nudge(for: keys, app: app).flatMap { cycle.firstIndex(of: $0) })
+                        once: engine.correctedOnce(keys, app: app).flatMap { cycle.firstIndex(of: $0) })
     }
 
     /// The word being composed as the marked text, with its boundary while it is held.

@@ -256,7 +256,8 @@ A word corrected once leans that way from then on: a close call (`so`/`내`) tur
 doesn't, so a stray switch doesn't do much. It is forgotten after 30 days unless corrected or typed
 that way again. Correct the same keys the same way a second time and Araso always writes them so, also with a
 particle after them (remember `ghostty` and you get `ghostty에`);
-switching a word back to Araso's own guess forgets it. Each correction draws a line under the word
+switching a word back to Araso's own guess forgets it, and switching a remembered word to yet another
+reading moves the memory there the second time. Each correction draws a line under the word
 for a moment: gray dots after the first; solid blue with a streak of light running along it when the
 word is learned; and a gray line taken back from the right when switching back forgot it. In the
 switch key's list the marks sit on the language tags (`EN`, `KO`, `JA`): a filled pill on the reading

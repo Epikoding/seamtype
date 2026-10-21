@@ -657,3 +657,48 @@ import Testing
     func learn(_ candidate: ConversionCandidate, for kana: String) {}
     func save() {}
 }
+
+/// With three readings the list's pill stays on a remembered one until another reading is chosen
+/// twice; switching back to Araso's own moves it back at once.
+@MainActor @Suite struct ThreeReadingsTests {
+    let field = FakeTextField()
+    let engine: DictionaryEngine
+    let session: InputSession
+
+    init() {
+        let lex = FileManager.default.temporaryDirectory.appendingPathComponent("araso-three-\(UUID().uuidString).json")
+        engine = DictionaryEngine(base: SplittingEngine(base: trilingual, english: trilingual.english, japanese: trilingual.segmenter), storeURL: lex)
+        session = InputSession(engine: engine, converter: FakeConverter(), japaneseEnabled: true)
+    }
+
+    /// Types tori, switches until `target` is shown, and commits it; returns the list as first
+    /// shown: each reading with its mark.
+    @discardableResult
+    func type(_ target: String) -> [String] {
+        for ch in "tori" { _ = session.handle(.letter(ch), client: field) }
+        _ = session.handle(.cycle, client: field)
+        let first = session.readings!
+        while let r = session.readings, r.texts[r.selected] != target { _ = session.handle(.cycle, client: field) }
+        for ch in " x " where !session.handle(ch == "x" ? .letter(ch) : .printable(ch), client: field) {
+            field.insertText(String(ch), replacing: nil)
+        }
+        return first.texts.indices.map { first.texts[$0] + ($0 == first.pick ? "●" : $0 == first.once ? "○" : "") }
+    }
+
+    @Test func pillStaysOnTheRememberedReading() {
+        engine.learn("tori", as: .english, engineChoice: .japanese)
+        engine.learn("tori", as: .english, engineChoice: .japanese)
+        #expect(type("새갸") == ["tori●", "새갸", "とり"])
+        #expect(type("새갸") == ["tori●", "새갸○", "とり"])
+        #expect(type("とり") == ["tori", "새갸●", "とり"])
+        #expect(type("とり") == ["tori", "새갸", "とり●"]) // back to Araso's own: forgotten
+    }
+
+    @Test func typingTheRememberedReadingDropsTheSwitch() {
+        engine.learn("tori", as: .english, engineChoice: .japanese)
+        engine.learn("tori", as: .english, engineChoice: .japanese)
+        type("새갸")
+        type("tori")
+        #expect(type("tori") == ["tori●", "새갸", "とり"])
+    }
+}
