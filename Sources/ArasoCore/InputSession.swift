@@ -124,16 +124,15 @@ public final class InputSession {
         /// The reading the keys were corrected to once: the engine leans to it, and choosing it
         /// again learns it for good.
         public var once: Int? = nil
-        /// Araso's own reading, the one it gives the keys without the dictionary.
-        public var own: Int? = nil
     }
 
     /// A correction the dictionary just took: the first one (the engine leans that way from now
-    /// on) or the second, the word learned for good. The input method shows it by the word.
+    /// on), the second, the word learned for good, or a switch back to Araso's own reading that
+    /// forgot it. The input method shows it by the word.
     public struct Learned: Equatable {
         public let text: String
         public let language: Language
-        public var forGood = true
+        public var learning: DictionaryEngine.Learning = .forGood
     }
 
     private struct Committed {
@@ -1241,8 +1240,7 @@ public final class InputSession {
         let own = engine.decide(keys, context: DecisionContext(app: app))
         return Readings(texts: cycle.map { rendered(keys, $0) }, languages: cycle, selected: selected,
                         remembered: own.remembered == nil ? nil : cycle.firstIndex(of: own.language),
-                        once: engine.nudge(for: keys, app: app).flatMap { cycle.firstIndex(of: $0) },
-                        own: cycle.firstIndex(of: engine.ownDecision(keys, context: DecisionContext(app: app)).language))
+                        once: engine.nudge(for: keys, app: app).flatMap { cycle.firstIndex(of: $0) })
     }
 
     /// The word being composed as the marked text, with its boundary while it is held.
@@ -1478,7 +1476,7 @@ public final class InputSession {
         if let last = lastRecorded, last.keys == keys, last.language == language { return }
         lastRecorded = (keys, language)
         if let learning = engine.learn(keys, as: language, engineChoice: engineChoice) {
-            learned = Learned(text: committedReading(keys, as: language), language: language, forGood: learning == .forGood)
+            learned = Learned(text: committedReading(keys, as: language), language: language, learning: learning)
         }
     }
 

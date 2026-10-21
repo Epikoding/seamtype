@@ -261,9 +261,7 @@
 "KO" = "한";
 "JA" = "日";
 "MIX" = "섞음";
-"Remembered" = "기억됨";
 "Changed by the Dictionary" = "사전이 바꾼 단어";
 "%@ → %@ · Forget" = "%@ → %@ · 잊기";
-"Corrected once" = "한 번 고친 읽기";
-"Araso's own reading" = "Araso의 판단";
 "%@ → %@, once" = "%@ → %@, 한 번 고침";
+"%@, forgotten" = "%@, 잊음";

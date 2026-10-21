@@ -71,61 +71,6 @@ private extension Language {
 /// A little past the target and back: things land rather than stop.
 private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
 
-/// Araso's mark (the menu bar icon) as a gauge of what Araso knows about a reading: gray for
-/// the reading it picks by itself, or filled from the bottom in the accent color as far as the
-/// user's corrections taught it, half after one and full once learned for good.
-@MainActor final class MarkIcon: NSView {
-    /// The menu bar icon; nil outside an app bundle (development), where no mark is drawn.
-    static let image: NSImage? = Bundle.main.url(forResource: "Araso", withExtension: "tiff").flatMap(NSImage.init(contentsOf:))
-
-    private let empty = CALayer()
-    private let level = CALayer()
-    private let fill = CALayer()
-    private var fraction: CGFloat = 0
-
-    init?(size: NSSize) {
-        guard let image = Self.image,
-              let cg = (image.representations.compactMap { $0 as? NSBitmapImageRep }.max { $0.pixelsWide < $1.pixelsWide })?.cgImage
-        else { return nil }
-        super.init(frame: NSRect(origin: .zero, size: size))
-        wantsLayer = true
-        for layer in [empty, fill] {
-            let mask = CALayer()
-            mask.contents = cg
-            mask.contentsGravity = .resizeAspect
-            mask.frame = bounds
-            layer.frame = bounds
-            layer.mask = mask
-        }
-        level.frame = NSRect(x: 0, y: 0, width: size.width, height: 0)
-        level.masksToBounds = true
-        level.addSublayer(fill)
-        layer?.addSublayer(empty)
-        layer?.addSublayer(level)
-    }
-
-    required init?(coder: NSCoder) { nil }
-
-    /// `own`: Araso's own reading (all gray); otherwise `fraction` of the mark filled with `color`
-    /// over a faint empty mark. `animated` fills it from where it was.
-    func show(own: Bool, fraction: CGFloat, color: NSColor, emptyColor: NSColor, animated: Bool) {
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            empty.backgroundColor = (own ? color : emptyColor).cgColor
-            fill.backgroundColor = color.cgColor
-            CATransaction.commit()
-        }
-        self.fraction = own ? 0 : fraction
-        CATransaction.begin()
-        CATransaction.setAnimationDuration(animated && !reduceMotion ? 0.45 : 0)
-        CATransaction.setAnimationTimingFunction(springy)
-        CATransaction.setDisableActions(!(animated && !reduceMotion))
-        level.frame = NSRect(x: 0, y: 0, width: bounds.width, height: bounds.height * self.fraction)
-        CATransaction.commit()
-    }
-}
-
 /// The readings a switch key goes through for the word it changed, a list dropped under the
 /// word with each reading's language and the one on screen highlighted, until the next key
 /// (`InputSession.readings`). Rows fall in one after another; on the next switch the highlight
@@ -136,10 +81,10 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
     private static var shown: InputSession.Readings?
     private static var highlight: NSView?
     private static var rows: [(view: NSView, tag: NSTextField, text: NSTextField)] = []
-    /// Araso's mark on the readings it knows about: its own reading in gray, the one the keys
-    /// were corrected to once half filled, the one learned for good (or added by hand) full.
-    private static var marks: [(row: Int, view: MarkIcon, own: Bool, fraction: CGFloat)] = []
-    private static let markSize = NSSize(width: 17, height: 13.6)
+    /// The user's record on a reading's language tag: a dotted ring around it after one
+    /// correction, a filled pill under it once learned for good (or added by hand). A shape, not
+    /// a colour, so it reads on the highlight too. Araso's own reading carries nothing.
+    private static var records: [(row: Int, layer: CAShapeLayer, remembered: Bool)] = []
     /// Bumped on every show and hide, so a fade or a scramble left from before stops.
     private static var generation = 0
     private static var hiding = false
@@ -191,15 +136,11 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
         let texts = readings.texts.map { label($0, size: 14) }
         let tagWidth = tags.map(\.fittingSize.width).max() ?? 0
         let textWidth = min(texts.map(\.fittingSize.width).max() ?? 0, 240)
-        // One mark a row, the user's record over Araso's own: a reading both learned and Araso's
-        // shows the record.
-        var wanted: [Int: (own: Bool, fraction: CGFloat, name: String)] = [:]
-        if let row = readings.own { wanted[row] = (true, 0, L("Araso's own reading")) }
-        if let row = readings.once { wanted[row] = (false, 0.5, L("Corrected once")) }
-        if let row = readings.remembered { wanted[row] = (false, 1, L("Remembered")) }
-        wanted = wanted.filter { readings.texts.indices.contains($0.key) }
-        if MarkIcon.image == nil { wanted = [:] }
-        let rowWidth = max(8 + ceil(tagWidth) + 6 + ceil(textWidth) + (wanted.isEmpty ? 10 : 12 + ceil(markSize.width)), 96)
+        var recorded: [Int: Bool] = [:] // row: remembered (else corrected once)
+        if let row = readings.once { recorded[row] = false }
+        if let row = readings.remembered { recorded[row] = true }
+        recorded = recorded.filter { readings.texts.indices.contains($0.key) }
+        let rowWidth = max(8 + ceil(tagWidth) + 6 + ceil(textWidth) + 10, 96)
         let size = NSSize(width: rowWidth + inset * 2, height: CGFloat(texts.count) * rowHeight + inset * 2)
 
         let background = NSVisualEffectView(frame: NSRect(origin: .zero, size: size))
@@ -228,6 +169,7 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
             let (tag, text) = pair
             let row = NSView(frame: rowFrame(index, width: rowWidth))
             row.wantsLayer = true
+            tag.alignment = .center
             tag.frame = NSRect(x: 8, y: (rowHeight - tag.fittingSize.height) / 2, width: ceil(tagWidth), height: tag.fittingSize.height)
             text.frame = NSRect(x: 8 + ceil(tagWidth) + 6, y: (rowHeight - text.fittingSize.height) / 2,
                                 width: ceil(textWidth) + 2, height: text.fittingSize.height)
@@ -236,19 +178,24 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
             content.addSubview(row)
             return (row, tag, text)
         }
-        marks = wanted.compactMap { row, mark in
-            guard let view = MarkIcon(size: markSize) else { return nil }
-            view.setFrameOrigin(NSPoint(x: rowWidth - 8 - markSize.width, y: (rowHeight - markSize.height) / 2))
-            view.setAccessibilityElement(true)
-            view.setAccessibilityLabel(mark.name)
-            rows[row].view.addSubview(view)
-            return (row, view, mark.own, mark.fraction)
+        records = recorded.map { row, remembered in
+            let tag = rows[row].tag
+            // Around the tag's letters, a little wider than them, the row's height less a margin.
+            let box = NSRect(x: tag.frame.minX - 2.5, y: (rowHeight - 16) / 2, width: tag.frame.width + 5, height: 16)
+            let layer = CAShapeLayer()
+            layer.path = CGPath(roundedRect: box, cornerWidth: 4, cornerHeight: 4, transform: nil)
+            layer.lineWidth = remembered ? 0 : 1.3
+            layer.lineCap = .round
+            if !remembered { layer.lineDashPattern = [0.01, 2.6] } // dots: round caps on near-empty dashes
+            rows[row].view.layer?.insertSublayer(layer, at: 0)
+            if remembered { tag.font = .systemFont(ofSize: 11, weight: .semibold) }
+            tag.setAccessibilityLabel("\(tag.stringValue), \(L(remembered ? "Remembered" : "Corrected once"))")
+            return (row, layer, remembered)
         }
-        color(selected: readings.selected)
-
         background.setAccessibilityRole(.list)
         background.setAccessibilityLabel(L("Readings, %@ selected", readings.texts[readings.selected]))
         panel.contentView = background
+        color(selected: readings.selected)
         panel.setFrame(NSRect(origin: CaretPanel.origin(for: size, caret: caret, gap: gap, centered: false), size: size),
                        display: true)
         panel.alphaValue = 1
@@ -296,12 +243,23 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
             row.text.textColor = i == selected ? .alternateSelectedControlTextColor : .labelColor
             row.tag.textColor = i == selected ? .alternateSelectedControlTextColor : .secondaryLabelColor
         }
-        for mark in marks {
-            let on = mark.row == selected
-            mark.view.show(own: mark.own, fraction: mark.fraction,
-                           color: on ? .alternateSelectedControlTextColor : mark.own ? .secondaryLabelColor : .controlAccentColor,
-                           emptyColor: on ? NSColor.alternateSelectedControlTextColor.withAlphaComponent(0.35) : .tertiaryLabelColor,
-                           animated: false)
+        guard let appearance = panel?.contentView?.effectiveAppearance else { return }
+        appearance.performAsCurrentDrawingAppearance {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            for record in records {
+                let on = record.row == selected
+                let ink = on ? NSColor.alternateSelectedControlTextColor : record.remembered ? .controlAccentColor : .secondaryLabelColor
+                if record.remembered {
+                    // The pill takes the ink and the tag turns to what's under it.
+                    record.layer.fillColor = ink.cgColor
+                    rows[record.row].tag.textColor = on ? .controlAccentColor : .alternateSelectedControlTextColor
+                } else {
+                    record.layer.fillColor = nil
+                    record.layer.strokeColor = ink.cgColor
+                }
+            }
+            CATransaction.commit()
         }
     }
 
@@ -343,47 +301,51 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
     }
 }
 
-/// A correction the dictionary just took (`InputSession.learned`): a line is drawn under the
-/// word from left to right and fades: dotted after the first correction; solid when the word is
-/// learned for good, turning up into a check at the end, over the space after the word. It sits where a spelling mark would, under the letters, so it
-/// covers neither the lines around nor the text typed on; the switch key's list and the input
-/// menu say the rest.
+/// A correction the dictionary just took (`InputSession.learned`), as a line under the word
+/// where a spelling mark would be: a gray dotted line drawn left to right after the first
+/// correction; a solid accent line with a streak of light running along it once learned for
+/// good; and when a switch back to Araso's own reading forgot the word, a gray line taken back
+/// from the right. It covers neither the lines around nor the text typed on; the switch key's
+/// list and the input menu say the rest.
 @MainActor enum LearnedHUD {
     private static var panel: NSPanel?
     private static var shown = 0
     private static let thickness: CGFloat = 2
-    /// How far the check rises and reaches past the word.
-    private static let check = CGSize(width: 5, height: 9)
+    /// The streak's length, in points.
+    private static let streak: CGFloat = 10
+    /// The ease of a pen stroke: quick to start, settling at the end.
+    private static let stroke = CAMediaTimingFunction(controlPoints: 0.6, 0, 0.2, 1)
 
     /// `word` is the word's rect in screen coordinates (its line, as the app reports it); without
     /// a width there is no line to draw.
     static func show(_ learned: InputSession.Learned, word: NSRect) {
         guard word != .zero, word.width >= 4 else { return }
-        let size = NSSize(width: ceil(word.width) + 2 + (learned.forGood ? check.width + 2 : 0),
-                          height: thickness + 2 + (learned.forGood ? check.height : 0))
-        let baseline = (thickness + 2) / 2
+        let width = ceil(word.width)
+        let size = NSSize(width: width + 2, height: thickness + 2)
+        let baseline = size.height / 2
         let panel = panel ?? CaretPanel.make(size: size)
         self.panel = panel
         let view = NSView(frame: NSRect(origin: .zero, size: size))
         view.wantsLayer = true
         view.setAccessibilityElement(true)
-        view.setAccessibilityLabel(learned.forGood ? L("%@ → always %@", learned.text, learned.language.displayName)
-                                                   : L("%@ → %@, once", learned.text, learned.language.displayName))
-        let line = CAShapeLayer()
+        let label = switch learned.learning {
+        case .once: L("%@ → %@, once", learned.text, learned.language.displayName)
+        case .forGood: L("%@ → always %@", learned.text, learned.language.displayName)
+        case .forgot: L("%@, forgotten", learned.text)
+        }
+        view.setAccessibilityLabel(label)
         let path = CGMutablePath()
         path.move(to: CGPoint(x: 1, y: baseline))
-        path.addLine(to: CGPoint(x: ceil(word.width) + 1, y: baseline))
-        if learned.forGood { path.addLine(to: CGPoint(x: ceil(word.width) + 1 + check.width, y: baseline + check.height)) }
-        line.path = path
-        line.lineWidth = thickness
-        line.lineCap = .round
-        line.lineJoin = .round
-        if !learned.forGood { line.lineDashPattern = [0.01, 4] } // dots: round caps on near-empty dashes
+        path.addLine(to: CGPoint(x: width + 1, y: baseline))
+        let line = shape(path)
+        let light = learned.learning == .forGood ? shape(path) : nil
+        if learned.learning == .once { line.lineDashPattern = [0.01, 4] } // dots: round caps on near-empty dashes
         view.effectiveAppearance.performAsCurrentDrawingAppearance {
-            line.strokeColor = NSColor.controlAccentColor.cgColor
+            line.strokeColor = (learned.learning == .forGood ? NSColor.controlAccentColor : .secondaryLabelColor).cgColor
+            light?.strokeColor = NSColor.white.withAlphaComponent(0.9).cgColor
         }
-        line.fillColor = nil
         view.layer?.addSublayer(line)
+        if let light { view.layer?.addSublayer(light) }
         panel.contentView = view
 
         // Just under the letters, where the underline of the word being typed was.
@@ -394,18 +356,44 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
         panel.setFrame(NSRect(origin: origin, size: size), display: true)
         panel.alphaValue = 1
         panel.orderFrontRegardless()
-        if !reduceMotion {
-            let draw = CABasicAnimation(keyPath: "strokeEnd")
-            draw.fromValue = 0
-            draw.toValue = 1
-            draw.duration = learned.forGood ? 0.42 : 0.32
-            draw.timingFunction = CAMediaTimingFunction(controlPoints: 0.6, 0, 0.2, 1)
-            line.add(draw, forKey: "draw")
+
+        var stay = 1.4
+        switch learned.learning {
+        case .once, .forGood:
+            if !reduceMotion { line.add(drawn(from: 0, to: 1, duration: learned.learning == .once ? 0.3 : 0.32), forKey: "draw") }
+            if let light {
+                light.strokeEnd = 0
+                if !reduceMotion {
+                    // A short stretch of the path, run from the start past the end once the line is down.
+                    let start = CABasicAnimation(keyPath: "strokeStart")
+                    start.fromValue = 0
+                    start.toValue = 1
+                    let end = CABasicAnimation(keyPath: "strokeEnd")
+                    end.fromValue = streak / (width + 2)
+                    end.toValue = 1 + streak / (width + 2)
+                    let run = CAAnimationGroup()
+                    run.animations = [start, end]
+                    run.duration = 0.52
+                    run.beginTime = CACurrentMediaTime() + 0.34
+                    run.timingFunction = CAMediaTimingFunction(controlPoints: 0.5, 0, 0.3, 1)
+                    light.add(run, forKey: "run")
+                }
+            }
+        case .forgot:
+            // Down already, taken back from the right.
+            line.strokeEnd = 0
+            stay = reduceMotion ? 0.6 : 0.5
+            if !reduceMotion {
+                let back = drawn(from: 1, to: 0, duration: 0.42)
+                back.beginTime = CACurrentMediaTime() + 0.08
+                back.fillMode = .backwards
+                line.add(back, forKey: "back")
+            }
         }
 
         shown += 1
         let current = shown
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + stay) {
             guard current == shown else { return }
             animate(0.3, nil, { panel.animator().alphaValue = 0 }) {
                 if current == shown { panel.orderOut(nil) }
@@ -416,5 +404,23 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
     static func hide() {
         shown += 1
         panel?.orderOut(nil)
+    }
+
+    private static func shape(_ path: CGPath) -> CAShapeLayer {
+        let layer = CAShapeLayer()
+        layer.path = path
+        layer.lineWidth = thickness
+        layer.lineCap = .round
+        layer.fillColor = nil
+        return layer
+    }
+
+    private static func drawn(from: CGFloat, to: CGFloat, duration: TimeInterval) -> CABasicAnimation {
+        let draw = CABasicAnimation(keyPath: "strokeEnd")
+        draw.fromValue = from
+        draw.toValue = to
+        draw.duration = duration
+        draw.timingFunction = stroke
+        return draw
     }
 }

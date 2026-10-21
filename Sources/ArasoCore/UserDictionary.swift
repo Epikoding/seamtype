@@ -149,6 +149,14 @@ public struct UserDictionary: Equatable, Sendable {
         return entries.count != before
     }
 
+    /// Removes the keys' learned language entries, leaving a word added by hand.
+    /// Returns true when something was removed.
+    public mutating func forgetLearned(_ keys: String) -> Bool {
+        let before = entries.count
+        entries.removeAll { $0.keys == keys && $0.language != nil && $0.forEveryApp && $0.source == .learned }
+        return entries.count != before
+    }
+
     /// Removes every learned entry; the user's own stay.
     public mutating func forgetLearned() {
         entries.removeAll { $0.source == .learned }
@@ -496,30 +504,41 @@ public final class DictionaryEngine: DecisionEngine, @unchecked Sendable {
     ///
     /// Pass `engineChoice` when the caller already knows what was shown (the input method
     /// always does: a fresh decision might not match). Returns what the correction taught:
-    /// the word corrected once, or learned for good (the second time); nil when it taught
-    /// nothing (back to the engine's choice, a word added by hand, keys too long).
+    /// the word corrected once, learned for good (the second time), or forgotten (switched back
+    /// to Araso's own reading, which drops a remembered word in one go); nil when it taught
+    /// nothing (back to the engine's choice with nothing learned, a word added by hand, keys too long).
     @discardableResult
     public func learn(_ keys: String, as language: Language, engineChoice: Language? = nil) -> Learning? {
         let shown = engineChoice ?? decide(keys, context: DecisionContext()).language
+        let own = ownDecision(keys, context: DecisionContext()).language
         let day = today()
         var learning: Learning?
         persist(lock.withLock {
             let before = store
-            if store.learn(keys, as: language, shown: shown, today: day) {
+            let learned = { (entry: UserDictionary.Entry) in
+                entry.keys == keys && entry.forEveryApp && entry.source == .learned && entry.language != nil
+            }
+            // Switched away from the reading the dictionary gave, back to Araso's own.
+            if language == own, store.entries.first(where: learned)?.language == shown, store.forgetLearned(keys) {
+                learning = .forgot
+            } else if store.learn(keys, as: language, shown: shown, today: day) {
                 lastLearnedKeys = keys
                 learning = .forGood
             } else if store != before, store.entries.contains(where: {
                 $0.keys == keys && $0.forEveryApp && $0.strength == .weak && $0.language == language
             }) {
                 learning = .once
+            } else if before.entries.contains(where: learned), !store.entries.contains(where: learned) {
+                learning = .forgot
             }
+            if learning == .forgot { recent.removeAll { $0.keys == keys } }
             return store == before ? nil : store
         })
         return learning
     }
 
     /// What a correction taught the dictionary.
-    public enum Learning: Sendable { case once, forGood }
+    public enum Learning: Sendable { case once, forGood, forgot }
 
     /// The keys decided by the engine under the dictionary alone, as if the user had never
     /// corrected or added them: Araso's own reading.

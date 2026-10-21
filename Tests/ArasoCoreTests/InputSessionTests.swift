@@ -106,13 +106,13 @@ final class FakeTextField: TextClient {
         type("dkssud")
         #expect(session.readings == nil)
         session.handle(.escape, client: field)
-        #expect(session.readings == InputSession.Readings(texts: ["dkssud", "안녕"], languages: [.english, .korean], selected: 0, own: 1))
+        #expect(session.readings == InputSession.Readings(texts: ["dkssud", "안녕"], languages: [.english, .korean], selected: 0))
         type(" ")
         #expect(session.readings == nil)
         session.handle(.escape, client: field)
         #expect(field.text == "안녕 ")
         // dkssud went in as English once: that reading is marked as corrected once.
-        #expect(session.readings == InputSession.Readings(texts: ["dkssud", "안녕"], languages: [.english, .korean], selected: 1, once: 0, own: 1))
+        #expect(session.readings == InputSession.Readings(texts: ["dkssud", "안녕"], languages: [.english, .korean], selected: 1, once: 0))
         type("a")
         #expect(session.readings == nil)
         type(" githubdp")
@@ -181,13 +181,30 @@ final class FakeTextField: TextClient {
         session.handle(.escape, client: field)
         let flipped = String(field.text.dropLast())
         type("r")
-        #expect(session.learned == InputSession.Learned(text: flipped, language: .english, forGood: false)) // once: a nudge
+        #expect(session.learned == InputSession.Learned(text: flipped, language: .english, learning: .once)) // once: a nudge
         type("jtm ")
         session.handle(.escape, client: field)
         type("a") // the flip window closes: learned for good
         #expect(session.learned == InputSession.Learned(text: flipped, language: .english))
         type("b")
         #expect(session.learned == nil)
+    }
+
+    /// Switching a remembered word back to Araso's own reading forgets it in one go, and says so.
+    @Test func backToTheOwnReadingForgetsTheWord() {
+        type("rjtm ")
+        let own = String(field.text.dropLast())
+        session.handle(.escape, client: field)
+        type("rjtm ")
+        session.handle(.escape, client: field)
+        type("x rjtm ") // remembered: goes in as the correction
+        session.handle(.escape, client: field)
+        #expect(field.text.hasSuffix(own + " "))
+        type("a")
+        #expect(session.learned?.text == own)
+        #expect(session.learned?.learning == .forgot)
+        type(" rjtm ")
+        #expect(field.text.hasSuffix(own + " "))
     }
 
     @Test func flipOnlyAppliesToTheWordBeforeTheCaret() {
