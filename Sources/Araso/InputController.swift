@@ -127,7 +127,7 @@ final class InputController: IMKInputController {
                 // the shortcut without showing it to the input method (Ghostty pastes on ⌘V itself).
                 if event.keyCode == KeyCode.leftCommand || event.keyCode == KeyCode.rightCommand,
                    event.modifierFlags.contains(.command) {
-                    session.commandPressed(client: IMKClient(input))
+                    session.commandPressed(client: textClient(input))
                 }
                 pauseTapChanged(event, client: input)
                 switchTapChanged(event, client: input)
