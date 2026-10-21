@@ -259,8 +259,10 @@ particle after them (remember `ghostty` and you get `ghostty에`);
 switching a word back to Araso's own guess forgets it. Each correction draws a line under the word
 for a moment: gray dots after the first; solid blue with a streak of light running along it when the
 word is learned; and a gray line taken back from the right when switching back forgot it. In the
-switch key's list the record sits on the language tag (`EN`, `KO`, `JA`): a dotted ring on a reading
-corrected once, a filled pill on one Araso always uses (corrected twice, or a word you added yourself).
+switch key's list the marks sit on the language tags (`EN`, `KO`, `JA`): a filled pill on the reading
+the keys go in as when left alone, at first the one Araso picks, moving to the one it remembers
+(corrected twice, or a word you added yourself) and back when you switch back; a dotted ring on a
+reading corrected once, where one more correction moves the pill.
 To tell whether a word went in because of the dictionary, open **Changed by the Dictionary** in the
 input menu: it lists the last five words the dictionary decided, as `ghostty → English`, and choosing
 one forgets it (the list is kept only until the input method restarts, and never saved). If a word

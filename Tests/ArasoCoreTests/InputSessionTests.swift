@@ -106,13 +106,13 @@ final class FakeTextField: TextClient {
         type("dkssud")
         #expect(session.readings == nil)
         session.handle(.escape, client: field)
-        #expect(session.readings == InputSession.Readings(texts: ["dkssud", "안녕"], languages: [.english, .korean], selected: 0))
+        #expect(session.readings == InputSession.Readings(texts: ["dkssud", "안녕"], languages: [.english, .korean], selected: 0, pick: 1))
         type(" ")
         #expect(session.readings == nil)
         session.handle(.escape, client: field)
         #expect(field.text == "안녕 ")
         // dkssud went in as English once: that reading is marked as corrected once.
-        #expect(session.readings == InputSession.Readings(texts: ["dkssud", "안녕"], languages: [.english, .korean], selected: 1, once: 0))
+        #expect(session.readings == InputSession.Readings(texts: ["dkssud", "안녕"], languages: [.english, .korean], selected: 1, pick: 1, once: 0))
         type("a")
         #expect(session.readings == nil)
         type(" githubdp")
@@ -136,7 +136,7 @@ final class FakeTextField: TextClient {
         #expect(session.engine.recentlyApplied.map(\.keys) == ["ghostty", "chrao"])
         type("chrao")
         session.handle(.escape, client: field)
-        #expect(session.readings?.remembered == session.readings?.languages.firstIndex(of: .korean))
+        #expect(session.readings?.pick == session.readings?.languages.firstIndex(of: .korean))
         type(" ")
         #expect(session.engine.recentlyApplied.map(\.keys) == ["ghostty", "chrao"]) // switched: not the dictionary's
         session.engine.forget("ghostty")
@@ -151,10 +151,10 @@ final class FakeTextField: TextClient {
         type("x rjtm")
         session.handle(.escape, client: field)
         #expect(session.readings?.once == session.readings?.languages.firstIndex(of: flipped))
-        #expect(session.readings?.remembered == nil)
+        #expect(session.readings?.pick != session.readings?.once) // still Araso's own
         type(" x rjtm") // that went in as the correction again: learned for good
         session.handle(.escape, client: field)
-        #expect(session.readings?.remembered == session.readings?.languages.firstIndex(of: flipped))
+        #expect(session.readings?.pick == session.readings?.languages.firstIndex(of: flipped))
         #expect(session.readings?.once == nil)
     }
 
@@ -205,6 +205,10 @@ final class FakeTextField: TextClient {
         #expect(session.learned?.learning == .forgot)
         type(" rjtm ")
         #expect(field.text.hasSuffix(own + " "))
+        // The list's pick is back on Araso's reading.
+        type("rjtm")
+        session.handle(.escape, client: field)
+        #expect(session.readings.map { $0.texts[$0.pick!] } == own)
     }
 
     @Test func flipOnlyAppliesToTheWordBeforeTheCaret() {

@@ -81,10 +81,11 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
     private static var shown: InputSession.Readings?
     private static var highlight: NSView?
     private static var rows: [(view: NSView, tag: NSTextField, text: NSTextField)] = []
-    /// The user's record on a reading's language tag: a dotted ring around it after one
-    /// correction, a filled pill under it once learned for good (or added by hand). A shape, not
-    /// a colour, so it reads on the highlight too. Araso's own reading carries nothing.
-    private static var records: [(row: Int, layer: CAShapeLayer, remembered: Bool)] = []
+    /// Marks on the readings' language tags: a filled pill under the one the keys go in as when
+    /// left alone (Araso's own, or the dictionary's once it remembers one, and Araso's again after
+    /// switching back), a dotted ring around one corrected once, which another correction moves the
+    /// pill to. Shapes, not colours, so they read on the highlight too.
+    private static var records: [(row: Int, layer: CAShapeLayer, pill: Bool)] = []
     /// Bumped on every show and hide, so a fade or a scramble left from before stops.
     private static var generation = 0
     private static var hiding = false
@@ -134,16 +135,16 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
 
         let tags = readings.languages.map { label($0.readingTag, size: 11) }
         let texts = readings.texts.map { label($0, size: 14) }
-        // Measured in the semibold a remembered reading's tag takes, so no tag outgrows its column.
+        // Measured in the semibold a pill's tag takes, so no tag outgrows its column.
         let tagWidth = readings.languages.map { language -> CGFloat in
             let bold = label(language.readingTag, size: 11)
             bold.font = .systemFont(ofSize: 11, weight: .semibold)
             return bold.fittingSize.width
         }.max() ?? 0
         let textWidth = min(texts.map(\.fittingSize.width).max() ?? 0, 240)
-        var recorded: [Int: Bool] = [:] // row: remembered (else corrected once)
+        var recorded: [Int: Bool] = [:] // row: pill (else the ring of a reading corrected once)
         if let row = readings.once { recorded[row] = false }
-        if let row = readings.remembered { recorded[row] = true }
+        if let row = readings.pick { recorded[row] = true }
         recorded = recorded.filter { readings.texts.indices.contains($0.key) }
         let rowWidth = max(8 + ceil(tagWidth) + 6 + ceil(textWidth) + 10, 96)
         let size = NSSize(width: rowWidth + inset * 2, height: CGFloat(texts.count) * rowHeight + inset * 2)
@@ -184,19 +185,19 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
             content.addSubview(row)
             return (row, tag, text)
         }
-        records = recorded.map { row, remembered in
+        records = recorded.map { row, pill in
             let tag = rows[row].tag
             // Around the tag's column, the row's height less a margin.
             let box = NSRect(x: tag.frame.minX - 0.5, y: (rowHeight - 16) / 2, width: tag.frame.width + 1, height: 16)
             let layer = CAShapeLayer()
             layer.path = CGPath(roundedRect: box, cornerWidth: 4, cornerHeight: 4, transform: nil)
-            layer.lineWidth = remembered ? 0 : 1.3
+            layer.lineWidth = pill ? 0 : 1.3
             layer.lineCap = .round
-            if !remembered { layer.lineDashPattern = [0.01, 2.6] } // dots: round caps on near-empty dashes
+            if !pill { layer.lineDashPattern = [0.01, 2.6] } // dots: round caps on near-empty dashes
             rows[row].view.layer?.insertSublayer(layer, at: 0)
-            if remembered { tag.font = .systemFont(ofSize: 11, weight: .semibold) }
-            tag.setAccessibilityLabel("\(tag.stringValue), \(L(remembered ? "Remembered" : "Corrected once"))")
-            return (row, layer, remembered)
+            if pill { tag.font = .systemFont(ofSize: 11, weight: .semibold) }
+            tag.setAccessibilityLabel("\(tag.stringValue), \(L(pill ? "Goes in as" : "Corrected once"))")
+            return (row, layer, pill)
         }
         background.setAccessibilityRole(.list)
         background.setAccessibilityLabel(L("Readings, %@ selected", readings.texts[readings.selected]))
@@ -255,8 +256,8 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
             CATransaction.setDisableActions(true)
             for record in records {
                 let on = record.row == selected
-                let ink = on ? NSColor.alternateSelectedControlTextColor : record.remembered ? .controlAccentColor : .secondaryLabelColor
-                if record.remembered {
+                let ink = on ? NSColor.alternateSelectedControlTextColor : record.pill ? .controlAccentColor : .secondaryLabelColor
+                if record.pill {
                     // The pill takes the ink and the tag turns to what's under it.
                     record.layer.fillColor = ink.cgColor
                     rows[record.row].tag.textColor = on ? .controlAccentColor : .alternateSelectedControlTextColor
