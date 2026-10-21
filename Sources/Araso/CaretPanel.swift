@@ -275,28 +275,24 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
     }
 }
 
-/// A correction the dictionary just took (`InputSession.learned`), as a line under the word
-/// where a spelling mark would be: a gray dotted line drawn left to right after the first
-/// correction; a solid accent line with a streak of light running along it once learned for
-/// good; and when a switch back to Araso's own reading forgot the word, a gray line taken back
-/// from the right. It covers neither the lines around nor the text typed on; the switch key's
-/// list and the input menu say the rest.
+/// A correction the dictionary just took (`InputSession.learned`), as a highlighter stroke under
+/// the word: below the letters' baseline only, where the app's own underlines are (the line of text
+/// being typed, a spelling mark), so it covers no letter. Pale yellow after the first correction,
+/// full yellow once learned for good, both drawn left to right; gray taken back from the right when
+/// a switch back to Araso's own reading forgot the word. Yellow, as no app's underline is.
 @MainActor enum LearnedHUD {
     private static var panel: NSPanel?
     private static var shown = 0
-    private static let thickness: CGFloat = 2
-    /// The streak's length, in points.
-    private static let streak: CGFloat = 10
     /// The ease of a pen stroke: quick to start, settling at the end.
     private static let stroke = CAMediaTimingFunction(controlPoints: 0.6, 0, 0.2, 1)
 
-    /// `word` is the word's rect in screen coordinates (its line, as the app reports it); without
-    /// a width there is no line to draw.
-    static func show(_ learned: InputSession.Learned, word: NSRect) {
+    /// `word` is the word's line in screen coordinates; `descent` how far its letters' baseline is
+    /// above the line's bottom, the room the stroke takes. Without a width there is nothing to mark.
+    static func show(_ learned: InputSession.Learned, word: NSRect, descent: CGFloat) {
         guard word != .zero, word.width >= 4 else { return }
-        let width = ceil(word.width)
-        let size = NSSize(width: width + 2, height: thickness + 2)
-        let baseline = size.height / 2
+        // From just below the baseline to the line's bottom, at least a few points to be seen.
+        let height = min(max(descent - 1, 3), 8)
+        let size = NSSize(width: ceil(word.width), height: height)
         let panel = panel ?? CaretPanel.make(size: size)
         self.panel = panel
         let view = NSView(frame: NSRect(origin: .zero, size: size))
@@ -308,24 +304,29 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
         case .forgot: L("%@, forgotten", learned.text)
         }
         view.setAccessibilityLabel(label)
-        // The round caps reach half the line's width past each end: inset by that, so the line
-        // spans the word and stops just short of the caret after it.
+        // A line as thick as the band, butt-ended, so drawing it is the band filling in.
         let path = CGMutablePath()
-        path.move(to: CGPoint(x: 1 + thickness / 2, y: baseline))
-        path.addLine(to: CGPoint(x: max(width + 1 - thickness / 2, 1 + thickness / 2), y: baseline))
-        let line = shape(path)
-        let light = learned.learning == .forGood ? shape(path) : nil
-        if learned.learning == .once { line.lineDashPattern = [0.01, 4] } // dots: round caps on near-empty dashes
+        path.move(to: CGPoint(x: 0, y: height / 2))
+        path.addLine(to: CGPoint(x: size.width, y: height / 2))
+        let band = CAShapeLayer()
+        band.path = path
+        band.lineWidth = height
+        band.lineCap = .butt
+        band.fillColor = nil
         view.effectiveAppearance.performAsCurrentDrawingAppearance {
-            line.strokeColor = (learned.learning == .forGood ? NSColor.controlAccentColor : .secondaryLabelColor).cgColor
-            light?.strokeColor = NSColor.white.withAlphaComponent(0.9).cgColor
+            // A light page washes a tint out, so it is stronger there.
+            let dark = view.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            let (color, alpha): (NSColor, CGFloat) = switch learned.learning {
+            case .once: (.systemYellow, dark ? 0.35 : 0.4)
+            case .forGood: (.systemYellow, dark ? 0.75 : 0.85)
+            case .forgot: (.systemGray, dark ? 0.5 : 0.45)
+            }
+            band.strokeColor = color.withAlphaComponent(alpha).cgColor
         }
-        view.layer?.addSublayer(line)
-        if let light { view.layer?.addSublayer(light) }
+        view.layer?.addSublayer(band)
         panel.contentView = view
 
-        // Just under the letters, where the underline of the word being typed was.
-        var origin = NSPoint(x: word.minX - 1, y: word.minY - baseline)
+        var origin = NSPoint(x: word.minX, y: word.minY)
         if let visible = (NSScreen.screens.first { $0.frame.contains(word.origin) } ?? NSScreen.main)?.visibleFrame {
             origin.y = max(origin.y, visible.minY)
         }
@@ -333,45 +334,26 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
         panel.alphaValue = 1
         panel.orderFrontRegardless()
 
-        var stay = 1.4
-        switch learned.learning {
-        case .once, .forGood:
-            if !reduceMotion { line.add(drawn(from: 0, to: 1, duration: learned.learning == .once ? 0.3 : 0.32), forKey: "draw") }
-            if let light {
-                light.strokeEnd = 0
-                if !reduceMotion {
-                    // A short stretch of the path, run from the start past the end once the line is down.
-                    let start = CABasicAnimation(keyPath: "strokeStart")
-                    start.fromValue = 0
-                    start.toValue = 1
-                    let end = CABasicAnimation(keyPath: "strokeEnd")
-                    end.fromValue = streak / (width + 2)
-                    end.toValue = 1 + streak / (width + 2)
-                    let run = CAAnimationGroup()
-                    run.animations = [start, end]
-                    run.duration = 0.52
-                    run.beginTime = CACurrentMediaTime() + 0.34
-                    run.timingFunction = CAMediaTimingFunction(controlPoints: 0.5, 0, 0.3, 1)
-                    light.add(run, forKey: "run")
-                }
-            }
-        case .forgot:
+        var stay = 1.3
+        if learned.learning == .forgot {
             // Down already, taken back from the right.
-            line.strokeEnd = 0
-            stay = reduceMotion ? 0.6 : 0.5
+            band.strokeEnd = 0
+            stay = 0.6
             if !reduceMotion {
                 let back = drawn(from: 1, to: 0, duration: 0.42)
-                back.beginTime = CACurrentMediaTime() + 0.08
+                back.beginTime = CACurrentMediaTime() + 0.12
                 back.fillMode = .backwards
-                line.add(back, forKey: "back")
+                band.add(back, forKey: "back")
             }
+        } else if !reduceMotion {
+            band.add(drawn(from: 0, to: 1, duration: 0.32), forKey: "draw")
         }
 
         shown += 1
         let current = shown
         DispatchQueue.main.asyncAfter(deadline: .now() + stay) {
             guard current == shown else { return }
-            animate(0.3, nil, { panel.animator().alphaValue = 0 }) {
+            animate(0.5, nil, { panel.animator().alphaValue = 0 }) {
                 if current == shown { panel.orderOut(nil) }
             }
         }
@@ -380,15 +362,6 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
     static func hide() {
         shown += 1
         panel?.orderOut(nil)
-    }
-
-    private static func shape(_ path: CGPath) -> CAShapeLayer {
-        let layer = CAShapeLayer()
-        layer.path = path
-        layer.lineWidth = thickness
-        layer.lineCap = .round
-        layer.fillColor = nil
-        return layer
     }
 
     private static func drawn(from: CGFloat, to: CGFloat, duration: TimeInterval) -> CABasicAnimation {

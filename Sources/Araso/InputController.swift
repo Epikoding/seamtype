@@ -246,7 +246,11 @@ final class InputController: IMKInputController {
         } else {
             ReadingsHUD.hide()
         }
-        if let learned = session.learned { LearnedHUD.show(learned, word: learnedRect(learned) ?? caretRect(client)) }
+        if let learned = session.learned {
+            let word = learnedRect(learned) ?? caretRect(client)
+            // The font's descent is the room below the baseline; a fifth of the line without one.
+            LearnedHUD.show(learned, word: word, descent: wordFont.map { -$0.descender } ?? word.height * 0.2)
+        }
     }
 
     /// Asks where the word being typed is while it is underlined; kept from before a key that
