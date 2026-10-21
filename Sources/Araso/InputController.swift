@@ -240,9 +240,18 @@ final class InputController: IMKInputController {
         log.info("paused=\(self.session.paused) app=\(self.session.app ?? "?", privacy: .public)")
     }
 
-    /// The caret's line in screen coordinates, or `.zero` when the app doesn't say.
+    /// The caret's line in screen coordinates, or `.zero` when the app doesn't say: where the
+    /// underlined word starts while one is being typed, else the caret itself. Index 0 is the
+    /// marked text's first letter only while there is marked text; after a commit it is the
+    /// start of the text (a word's mark landed at the start of the line).
     private func caretRect(_ client: IMKTextInput) -> NSRect {
         var rect = NSRect.zero
+        let selected = client.selectedRange()
+        if client.markedRange().location == NSNotFound, selected.location != NSNotFound {
+            var actual = NSRange(location: NSNotFound, length: 0)
+            rect = client.firstRect(forCharacterRange: NSRange(location: selected.location, length: 0), actualRange: &actual)
+            if rect.height > 0 { return rect }
+        }
         _ = client.attributes(forCharacterIndex: 0, lineHeightRectangle: &rect)
         return rect
     }
