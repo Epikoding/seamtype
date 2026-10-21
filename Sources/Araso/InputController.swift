@@ -230,7 +230,9 @@ final class InputController: IMKInputController {
     @MainActor private func syncCaretPanels(_ client: IMKTextInput) {
         if let readings = session.readings {
             LearnedHUD.hide()
-            ReadingsHUD.show(readings, caret: caretRect(client))
+            let marked = client.markedRange()
+            let typing = marked.location != NSNotFound && marked.length > 0
+            ReadingsHUD.show(readings, caret: typing ? caretRect(client) : wordRect ?? caretRect(client))
         } else {
             ReadingsHUD.hide()
         }
@@ -239,14 +241,29 @@ final class InputController: IMKInputController {
 
     /// Asks where the word being typed is while it is underlined; kept from before a key that
     /// commits it, for the mark that may follow.
+    /// The start is the marked text's index 0, the end its length (where the caret is), both
+    /// through `attributes(forCharacterIndex:)`, the call the readings list is placed by:
+    /// `firstRect(forCharacterRange:)` came back as garbage (1.6e-314) through IMK.
     @MainActor private func noteWordRect(_ client: IMKTextInput) {
         let marked = client.markedRange()
         guard marked.location != NSNotFound, marked.length > 0 else { return }
-        var actual = NSRange(location: NSNotFound, length: 0)
-        let rect = client.firstRect(forCharacterRange: marked, actualRange: &actual)
+        var start = NSRect.zero, end = NSRect.zero
+        _ = client.attributes(forCharacterIndex: 0, lineHeightRectangle: &start)
+        _ = client.attributes(forCharacterIndex: marked.length, lineHeightRectangle: &end)
         // Positions only, never text.
-        log.info("word rect \(rect.debugDescription, privacy: .public)")
-        if rect.height > 0 { wordRect = rect }
+        log.info("word start \(start.debugDescription, privacy: .public) end \(end.debugDescription, privacy: .public)")
+        if Self.plausible(end), Self.plausible(start), end.minX >= start.minX, abs(end.midY - start.midY) < 1 {
+            wordRect = NSRect(x: start.minX, y: start.minY, width: end.minX - start.minX, height: start.height)
+        } else if Self.plausible(start) {
+            wordRect = start
+        }
+    }
+
+    /// A rect a text client gave that can be a place on screen: finite, line-sized, on a screen.
+    static func plausible(_ rect: NSRect) -> Bool {
+        guard rect.origin.x.isFinite, rect.origin.y.isFinite, (4...400).contains(rect.height),
+              rect.width >= 0, rect.width < 10_000 else { return false }
+        return NSScreen.screens.contains { $0.frame.insetBy(dx: -1, dy: -1).contains(rect.origin) }
     }
 
     /// Pauses or resumes this text field, and says so under the caret.
@@ -269,9 +286,7 @@ final class InputController: IMKInputController {
         if marked.location == NSNotFound || marked.length == 0, selected.location != NSNotFound {
             var actual = NSRange(location: NSNotFound, length: 0)
             rect = client.firstRect(forCharacterRange: NSRange(location: selected.location, length: 0), actualRange: &actual)
-            // Positions only, never text.
-            log.info("caret from selection \(rect.debugDescription, privacy: .public)")
-            if rect.height > 0 { return rect }
+            if Self.plausible(rect) { return rect }
         }
         _ = client.attributes(forCharacterIndex: 0, lineHeightRectangle: &rect)
         return rect
