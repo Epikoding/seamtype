@@ -241,22 +241,30 @@ final class InputController: IMKInputController {
 
     /// Asks where the word being typed is while it is underlined; kept from before a key that
     /// commits it, for the mark that may follow.
-    /// The start is the marked text's index 0, the end its length (where the caret is), both
-    /// through `attributes(forCharacterIndex:)`, the call the readings list is placed by:
-    /// `firstRect(forCharacterRange:)` came back as garbage (1.6e-314) through IMK.
+    /// The start is the marked text's index 0, through `attributes(forCharacterIndex:)`, the call
+    /// the readings list is placed by: `firstRect(forCharacterRange:)` came back as garbage
+    /// (1.6e-314) through IMK. TextEdit answers a zero rect for the index just past the word, so
+    /// the end is its last letter's place plus one letter's average width.
     @MainActor private func noteWordRect(_ client: IMKTextInput) {
         let marked = client.markedRange()
         guard marked.location != NSNotFound, marked.length > 0 else { return }
-        var start = NSRect.zero, end = NSRect.zero
+        var start = NSRect.zero, end = NSRect.zero, last = NSRect.zero
         _ = client.attributes(forCharacterIndex: 0, lineHeightRectangle: &start)
+        guard Self.plausible(start) else { return }
         _ = client.attributes(forCharacterIndex: marked.length, lineHeightRectangle: &end)
+        if marked.length > 1 { _ = client.attributes(forCharacterIndex: marked.length - 1, lineHeightRectangle: &last) }
         // Positions only, never text.
-        log.info("word start \(start.debugDescription, privacy: .public) end \(end.debugDescription, privacy: .public)")
-        if Self.plausible(end), Self.plausible(start), end.minX >= start.minX, abs(end.midY - start.midY) < 1 {
-            wordRect = NSRect(x: start.minX, y: start.minY, width: end.minX - start.minX, height: start.height)
-        } else if Self.plausible(start) {
-            wordRect = start
+        log.info("word start \(start.debugDescription, privacy: .public) last \(last.debugDescription, privacy: .public) end \(end.debugDescription, privacy: .public)")
+        func onLine(_ rect: NSRect) -> Bool { Self.plausible(rect) && rect.minX > start.minX && abs(rect.midY - start.midY) < 1 }
+        let endX: CGFloat
+        if onLine(end) {
+            endX = end.minX
+        } else if onLine(last) {
+            endX = last.minX + (last.minX - start.minX) / CGFloat(marked.length - 1)
+        } else {
+            endX = start.minX + CGFloat(marked.length) * start.height * 0.55 // about a letter's width
         }
+        wordRect = NSRect(x: start.minX, y: start.minY, width: endX - start.minX, height: start.height)
     }
 
     /// A rect a text client gave that can be a place on screen: finite, line-sized, on a screen.
