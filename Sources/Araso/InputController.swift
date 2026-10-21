@@ -254,7 +254,7 @@ final class InputController: IMKInputController {
         _ = client.attributes(forCharacterIndex: marked.length, lineHeightRectangle: &end)
         if marked.length > 1 { _ = client.attributes(forCharacterIndex: marked.length - 1, lineHeightRectangle: &last) }
         // Positions only, never text.
-        log.info("word start \(start.debugDescription, privacy: .public) last \(last.debugDescription, privacy: .public) end \(end.debugDescription, privacy: .public)")
+        log.debug("word start \(start.debugDescription, privacy: .public) last \(last.debugDescription, privacy: .public) end \(end.debugDescription, privacy: .public)")
         func onLine(_ rect: NSRect) -> Bool { Self.plausible(rect) && rect.minX > start.minX && abs(rect.midY - start.midY) < 1 }
         let endX: CGFloat
         if onLine(end) {
