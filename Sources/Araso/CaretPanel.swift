@@ -277,9 +277,10 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
 
 /// A correction the dictionary just took (`InputSession.learned`), as a highlighter stroke under
 /// the word: below the letters' baseline only, where the app's own underlines are (the line of text
-/// being typed, a spelling mark), so it covers no letter. Pale yellow after the first correction,
-/// full yellow once learned for good, both drawn left to right; gray taken back from the right when
-/// a switch back to Araso's own reading forgot the word. Yellow, as no app's underline is.
+/// being typed, a spelling mark), so it covers no letter. In the color of the language the word was
+/// set to, as the website and the settings window underline a word: pale after the first
+/// correction, full once learned for good, both drawn left to right; the palette's gray ink taken
+/// back from the right when a switch back to Araso's own reading forgot the word.
 @MainActor enum LearnedHUD {
     private static var panel: NSPanel?
     private static var shown = 0
@@ -314,12 +315,10 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
         band.lineCap = .butt
         band.fillColor = nil
         view.effectiveAppearance.performAsCurrentDrawingAppearance {
-            // A light page washes a tint out, so it is stronger there.
-            let dark = view.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
             let (color, alpha): (NSColor, CGFloat) = switch learned.learning {
-            case .once: (.systemYellow, dark ? 0.35 : 0.4)
-            case .forGood: (.systemYellow, dark ? 0.75 : 0.85)
-            case .forgot: (.systemGray, dark ? 0.5 : 0.45)
+            case .once: (learned.language.markColor, 0.35)
+            case .forGood: (learned.language.markColor, 0.9)
+            case .forgot: (Seam.AppKitColors.ink2, 0.4)
             }
             band.strokeColor = color.withAlphaComponent(alpha).cgColor
         }
