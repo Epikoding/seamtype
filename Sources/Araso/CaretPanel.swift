@@ -343,54 +343,71 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
     }
 }
 
-/// A correction the dictionary just took (`InputSession.learned`): Araso's mark drops onto the
-/// end of the word and fills, to half after the first correction and to full when the word is
-/// learned for good, as the switch key's list shows it. It sits in the gap above the line, so
-/// the text typed on doesn't run under it; the input menu lists the word and takes it back.
+/// A correction the dictionary just took (`InputSession.learned`): a line is drawn under the
+/// word from left to right and fades: dotted after the first correction; solid when the word is
+/// learned for good, turning up into a check at the end, over the space after the word. It sits where a spelling mark would, under the letters, so it
+/// covers neither the lines around nor the text typed on; the switch key's list and the input
+/// menu say the rest.
 @MainActor enum LearnedHUD {
     private static var panel: NSPanel?
     private static var shown = 0
-    private static let size = NSSize(width: 20, height: 16)
+    private static let thickness: CGFloat = 2
+    /// How far the check rises and reaches past the word.
+    private static let check = CGSize(width: 5, height: 9)
 
-    /// `word` is the word's rect in screen coordinates (its last line, as the app reports it);
-    /// the mark sits over its right end.
+    /// `word` is the word's rect in screen coordinates (its line, as the app reports it); without
+    /// a width there is no line to draw.
     static func show(_ learned: InputSession.Learned, word: NSRect) {
-        guard word != .zero, let mark = MarkIcon(size: size) else { return }
+        guard word != .zero, word.width >= 4 else { return }
+        let size = NSSize(width: ceil(word.width) + 2 + (learned.forGood ? check.width + 2 : 0),
+                          height: thickness + 2 + (learned.forGood ? check.height : 0))
+        let baseline = (thickness + 2) / 2
         let panel = panel ?? CaretPanel.make(size: size)
         self.panel = panel
-        panel.contentView = mark
-        mark.setAccessibilityElement(true)
-        mark.setAccessibilityLabel(learned.forGood ? L("%@ → always %@", learned.text, learned.language.displayName)
+        let view = NSView(frame: NSRect(origin: .zero, size: size))
+        view.wantsLayer = true
+        view.setAccessibilityElement(true)
+        view.setAccessibilityLabel(learned.forGood ? L("%@ → always %@", learned.text, learned.language.displayName)
                                                    : L("%@ → %@, once", learned.text, learned.language.displayName))
-
-        // Over the word's last letter, just above its line; below the line only where the
-        // line is at the top of the screen.
-        var origin = NSPoint(x: word.maxX - size.width + 2, y: word.maxY + 1)
-        if let visible = (NSScreen.screens.first { $0.frame.contains(word.origin) } ?? NSScreen.main)?.visibleFrame,
-           origin.y + size.height > visible.maxY {
-            origin.y = word.minY - size.height - 1
+        let line = CAShapeLayer()
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: 1, y: baseline))
+        path.addLine(to: CGPoint(x: ceil(word.width) + 1, y: baseline))
+        if learned.forGood { path.addLine(to: CGPoint(x: ceil(word.width) + 1 + check.width, y: baseline + check.height)) }
+        line.path = path
+        line.lineWidth = thickness
+        line.lineCap = .round
+        line.lineJoin = .round
+        if !learned.forGood { line.lineDashPattern = [0.01, 4] } // dots: round caps on near-empty dashes
+        view.effectiveAppearance.performAsCurrentDrawingAppearance {
+            line.strokeColor = NSColor.controlAccentColor.cgColor
         }
-        let landed = NSRect(origin: origin, size: size)
-        panel.setFrame(reduceMotion ? landed : landed.offsetBy(dx: 0, dy: 8), display: true)
-        panel.alphaValue = reduceMotion ? 1 : 0
+        line.fillColor = nil
+        view.layer?.addSublayer(line)
+        panel.contentView = view
+
+        // Just under the letters, where the underline of the word being typed was.
+        var origin = NSPoint(x: word.minX - 1, y: word.minY - baseline)
+        if let visible = (NSScreen.screens.first { $0.frame.contains(word.origin) } ?? NSScreen.main)?.visibleFrame {
+            origin.y = max(origin.y, visible.minY)
+        }
+        panel.setFrame(NSRect(origin: origin, size: size), display: true)
+        panel.alphaValue = 1
         panel.orderFrontRegardless()
-        let from: CGFloat = learned.forGood ? 0.5 : 0
-        mark.show(own: false, fraction: from, color: .controlAccentColor, emptyColor: .tertiaryLabelColor, animated: false)
-        animate(0.2, springy, {
-            panel.animator().setFrame(landed, display: true)
-            panel.animator().alphaValue = 1
-        })
+        if !reduceMotion {
+            let draw = CABasicAnimation(keyPath: "strokeEnd")
+            draw.fromValue = 0
+            draw.toValue = 1
+            draw.duration = learned.forGood ? 0.42 : 0.32
+            draw.timingFunction = CAMediaTimingFunction(controlPoints: 0.6, 0, 0.2, 1)
+            line.add(draw, forKey: "draw")
+        }
 
         shown += 1
         let current = shown
-        DispatchQueue.main.asyncAfter(deadline: .now() + (reduceMotion ? 0 : 0.18)) {
-            guard current == shown else { return }
-            mark.show(own: false, fraction: learned.forGood ? 1 : 0.5, color: .controlAccentColor,
-                      emptyColor: .tertiaryLabelColor, animated: true)
-        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
             guard current == shown else { return }
-            animate(0.25, nil, { panel.animator().alphaValue = 0 }) {
+            animate(0.3, nil, { panel.animator().alphaValue = 0 }) {
                 if current == shown { panel.orderOut(nil) }
             }
         }
