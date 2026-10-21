@@ -495,20 +495,38 @@ public final class DictionaryEngine: DecisionEngine, @unchecked Sendable {
     /// back to the engine's choice forgets the word.
     ///
     /// Pass `engineChoice` when the caller already knows what was shown (the input method
-    /// always does: a fresh decision might not match). Returns true when the word is now learned
-    /// for good (the second correction).
+    /// always does: a fresh decision might not match). Returns what the correction taught:
+    /// the word corrected once, or learned for good (the second time); nil when it taught
+    /// nothing (back to the engine's choice, a word added by hand, keys too long).
     @discardableResult
-    public func learn(_ keys: String, as language: Language, engineChoice: Language? = nil) -> Bool {
+    public func learn(_ keys: String, as language: Language, engineChoice: Language? = nil) -> Learning? {
         let shown = engineChoice ?? decide(keys, context: DecisionContext()).language
         let day = today()
-        var sure = false
+        var learning: Learning?
         persist(lock.withLock {
             let before = store
-            sure = store.learn(keys, as: language, shown: shown, today: day)
-            if sure { lastLearnedKeys = keys }
+            if store.learn(keys, as: language, shown: shown, today: day) {
+                lastLearnedKeys = keys
+                learning = .forGood
+            } else if store != before, store.entries.contains(where: {
+                $0.keys == keys && $0.forEveryApp && $0.strength == .weak && $0.language == language
+            }) {
+                learning = .once
+            }
             return store == before ? nil : store
         })
-        return sure
+        return learning
+    }
+
+    /// What a correction taught the dictionary.
+    public enum Learning: Sendable { case once, forGood }
+
+    /// The keys decided by the engine under the dictionary alone, as if the user had never
+    /// corrected or added them: Araso's own reading.
+    public func ownDecision(_ keys: String, context: DecisionContext) -> Decision {
+        var context = context
+        context.nudge = nil
+        return base.decide(keys, context: context)
     }
 
     /// The word went in as `language` without a correction: a weak entry saying so stays.

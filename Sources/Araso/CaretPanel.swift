@@ -71,6 +71,61 @@ private extension Language {
 /// A little past the target and back: things land rather than stop.
 private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
 
+/// Araso's mark (the menu bar icon) as a gauge of what Araso knows about a reading: gray for
+/// the reading it picks by itself, or filled from the bottom in the accent color as far as the
+/// user's corrections taught it, half after one and full once learned for good.
+@MainActor final class MarkIcon: NSView {
+    /// The menu bar icon; nil outside an app bundle (development), where no mark is drawn.
+    static let image: NSImage? = Bundle.main.url(forResource: "Araso", withExtension: "tiff").flatMap(NSImage.init(contentsOf:))
+
+    private let empty = CALayer()
+    private let level = CALayer()
+    private let fill = CALayer()
+    private var fraction: CGFloat = 0
+
+    init?(size: NSSize) {
+        guard let image = Self.image,
+              let cg = (image.representations.compactMap { $0 as? NSBitmapImageRep }.max { $0.pixelsWide < $1.pixelsWide })?.cgImage
+        else { return nil }
+        super.init(frame: NSRect(origin: .zero, size: size))
+        wantsLayer = true
+        for layer in [empty, fill] {
+            let mask = CALayer()
+            mask.contents = cg
+            mask.contentsGravity = .resizeAspect
+            mask.frame = bounds
+            layer.frame = bounds
+            layer.mask = mask
+        }
+        level.frame = NSRect(x: 0, y: 0, width: size.width, height: 0)
+        level.masksToBounds = true
+        level.addSublayer(fill)
+        layer?.addSublayer(empty)
+        layer?.addSublayer(level)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    /// `own`: Araso's own reading (all gray); otherwise `fraction` of the mark filled with `color`
+    /// over a faint empty mark. `animated` fills it from where it was.
+    func show(own: Bool, fraction: CGFloat, color: NSColor, emptyColor: NSColor, animated: Bool) {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            empty.backgroundColor = (own ? color : emptyColor).cgColor
+            fill.backgroundColor = color.cgColor
+            CATransaction.commit()
+        }
+        self.fraction = own ? 0 : fraction
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(animated && !reduceMotion ? 0.45 : 0)
+        CATransaction.setAnimationTimingFunction(springy)
+        CATransaction.setDisableActions(!(animated && !reduceMotion))
+        level.frame = NSRect(x: 0, y: 0, width: bounds.width, height: bounds.height * self.fraction)
+        CATransaction.commit()
+    }
+}
+
 /// The readings a switch key goes through for the word it changed, a list dropped under the
 /// word with each reading's language and the one on screen highlighted, until the next key
 /// (`InputSession.readings`). Rows fall in one after another; on the next switch the highlight
@@ -81,9 +136,10 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
     private static var shown: InputSession.Readings?
     private static var highlight: NSView?
     private static var rows: [(view: NSView, tag: NSTextField, text: NSTextField)] = []
-    /// The bookmarks on the readings the dictionary knows: filled on the one it gives the keys,
-    /// hollow on the one they were corrected to once.
-    private static var bookmarks: [(row: Int, view: NSImageView)] = []
+    /// Araso's mark on the readings it knows about: its own reading in gray, the one the keys
+    /// were corrected to once half filled, the one learned for good (or added by hand) full.
+    private static var marks: [(row: Int, view: MarkIcon, own: Bool, fraction: CGFloat)] = []
+    private static let markSize = NSSize(width: 17, height: 13.6)
     /// Bumped on every show and hide, so a fade or a scramble left from before stops.
     private static var generation = 0
     private static var hiding = false
@@ -135,9 +191,15 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
         let texts = readings.texts.map { label($0, size: 14) }
         let tagWidth = tags.map(\.fittingSize.width).max() ?? 0
         let textWidth = min(texts.map(\.fittingSize.width).max() ?? 0, 240)
-        let marks = [(readings.remembered, "bookmark.fill", L("Remembered")), (readings.once, "bookmark", L("Corrected once"))]
-            .compactMap { row, symbol, name in row.flatMap { readings.texts.indices.contains($0) ? ($0, symbol, name) : nil } }
-        let rowWidth = max(8 + ceil(tagWidth) + 6 + ceil(textWidth) + (marks.isEmpty ? 10 : 24), 96)
+        // One mark a row, the user's record over Araso's own: a reading both learned and Araso's
+        // shows the record.
+        var wanted: [Int: (own: Bool, fraction: CGFloat, name: String)] = [:]
+        if let row = readings.own { wanted[row] = (true, 0, L("Araso's own reading")) }
+        if let row = readings.once { wanted[row] = (false, 0.5, L("Corrected once")) }
+        if let row = readings.remembered { wanted[row] = (false, 1, L("Remembered")) }
+        wanted = wanted.filter { readings.texts.indices.contains($0.key) }
+        if MarkIcon.image == nil { wanted = [:] }
+        let rowWidth = max(8 + ceil(tagWidth) + 6 + ceil(textWidth) + (wanted.isEmpty ? 10 : 12 + ceil(markSize.width)), 96)
         let size = NSSize(width: rowWidth + inset * 2, height: CGFloat(texts.count) * rowHeight + inset * 2)
 
         let background = NSVisualEffectView(frame: NSRect(origin: .zero, size: size))
@@ -174,13 +236,13 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
             content.addSubview(row)
             return (row, tag, text)
         }
-        bookmarks = marks.compactMap { row, symbol, name in
-            guard let image = NSImage(systemSymbolName: symbol, accessibilityDescription: name) else { return nil }
-            let view = NSImageView(image: image)
-            view.symbolConfiguration = .init(pointSize: 10, weight: .medium)
-            view.frame = NSRect(x: rowWidth - 20, y: (rowHeight - 12) / 2, width: 12, height: 12)
+        marks = wanted.compactMap { row, mark in
+            guard let view = MarkIcon(size: markSize) else { return nil }
+            view.setFrameOrigin(NSPoint(x: rowWidth - 8 - markSize.width, y: (rowHeight - markSize.height) / 2))
+            view.setAccessibilityElement(true)
+            view.setAccessibilityLabel(mark.name)
             rows[row].view.addSubview(view)
-            return (row, view)
+            return (row, view, mark.own, mark.fraction)
         }
         color(selected: readings.selected)
 
@@ -234,8 +296,12 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
             row.text.textColor = i == selected ? .alternateSelectedControlTextColor : .labelColor
             row.tag.textColor = i == selected ? .alternateSelectedControlTextColor : .secondaryLabelColor
         }
-        for bookmark in bookmarks {
-            bookmark.view.contentTintColor = bookmark.row == selected ? .alternateSelectedControlTextColor : .controlAccentColor
+        for mark in marks {
+            let on = mark.row == selected
+            mark.view.show(own: mark.own, fraction: mark.fraction,
+                           color: on ? .alternateSelectedControlTextColor : mark.own ? .secondaryLabelColor : .controlAccentColor,
+                           emptyColor: on ? NSColor.alternateSelectedControlTextColor.withAlphaComponent(0.35) : .tertiaryLabelColor,
+                           animated: false)
         }
     }
 
@@ -277,48 +343,50 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
     }
 }
 
-/// A word learned for good just now (`InputSession.learned`): a bookmark drops onto the end
-/// of the word for a moment, the same bookmark the switch key's list puts on a remembered
-/// reading. It sits in the gap above the line, so the text typed on doesn't run under it; the
-/// input menu lists the word and takes it back.
+/// A correction the dictionary just took (`InputSession.learned`): Araso's mark drops onto the
+/// end of the word and fills, to half after the first correction and to full when the word is
+/// learned for good, as the switch key's list shows it. It sits in the gap above the line, so
+/// the text typed on doesn't run under it; the input menu lists the word and takes it back.
 @MainActor enum LearnedHUD {
     private static var panel: NSPanel?
     private static var shown = 0
-    private static let size = NSSize(width: 14, height: 16)
+    private static let size = NSSize(width: 20, height: 16)
 
     static func show(_ learned: InputSession.Learned, caret: NSRect) {
-        guard caret != .zero,
-              let image = NSImage(systemSymbolName: "bookmark.fill",
-                                  accessibilityDescription: L("%@ → always %@", learned.text, learned.language.displayName))
-        else { return }
+        guard caret != .zero, let mark = MarkIcon(size: size) else { return }
         let panel = panel ?? CaretPanel.make(size: size)
         self.panel = panel
-        let view = NSImageView(frame: NSRect(origin: .zero, size: size))
-        view.image = image
-        view.symbolConfiguration = .init(pointSize: 13, weight: .semibold)
-        view.contentTintColor = .controlAccentColor
-        view.wantsLayer = true
-        panel.contentView = view
+        panel.contentView = mark
+        mark.setAccessibilityElement(true)
+        mark.setAccessibilityLabel(learned.forGood ? L("%@ → always %@", learned.text, learned.language.displayName)
+                                                   : L("%@ → %@, once", learned.text, learned.language.displayName))
 
         // Over the word's last letter, just above its line; below the line only where the
         // line is at the top of the screen.
-        var origin = NSPoint(x: caret.minX - 12, y: caret.maxY + 1)
+        var origin = NSPoint(x: caret.minX - 14, y: caret.maxY + 1)
         if let visible = (NSScreen.screens.first { $0.frame.contains(caret.origin) } ?? NSScreen.main)?.visibleFrame,
            origin.y + size.height > visible.maxY {
             origin.y = caret.minY - size.height - 1
         }
         let landed = NSRect(origin: origin, size: size)
-        panel.setFrame(reduceMotion ? landed : landed.offsetBy(dx: 0, dy: 10), display: true)
+        panel.setFrame(reduceMotion ? landed : landed.offsetBy(dx: 0, dy: 8), display: true)
         panel.alphaValue = reduceMotion ? 1 : 0
         panel.orderFrontRegardless()
-        animate(0.24, springy, {
+        let from: CGFloat = learned.forGood ? 0.5 : 0
+        mark.show(own: false, fraction: from, color: .controlAccentColor, emptyColor: .tertiaryLabelColor, animated: false)
+        animate(0.2, springy, {
             panel.animator().setFrame(landed, display: true)
             panel.animator().alphaValue = 1
         })
 
         shown += 1
         let current = shown
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + (reduceMotion ? 0 : 0.18)) {
+            guard current == shown else { return }
+            mark.show(own: false, fraction: learned.forGood ? 1 : 0.5, color: .controlAccentColor,
+                      emptyColor: .tertiaryLabelColor, animated: true)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
             guard current == shown else { return }
             animate(0.25, nil, { panel.animator().alphaValue = 0 }) {
                 if current == shown { panel.orderOut(nil) }

@@ -106,13 +106,13 @@ final class FakeTextField: TextClient {
         type("dkssud")
         #expect(session.readings == nil)
         session.handle(.escape, client: field)
-        #expect(session.readings == InputSession.Readings(texts: ["dkssud", "안녕"], languages: [.english, .korean], selected: 0))
+        #expect(session.readings == InputSession.Readings(texts: ["dkssud", "안녕"], languages: [.english, .korean], selected: 0, own: 1))
         type(" ")
         #expect(session.readings == nil)
         session.handle(.escape, client: field)
         #expect(field.text == "안녕 ")
         // dkssud went in as English once: that reading is marked as corrected once.
-        #expect(session.readings == InputSession.Readings(texts: ["dkssud", "안녕"], languages: [.english, .korean], selected: 1, once: 0))
+        #expect(session.readings == InputSession.Readings(texts: ["dkssud", "안녕"], languages: [.english, .korean], selected: 1, once: 0, own: 1))
         type("a")
         #expect(session.readings == nil)
         type(" githubdp")
@@ -181,7 +181,7 @@ final class FakeTextField: TextClient {
         session.handle(.escape, client: field)
         let flipped = String(field.text.dropLast())
         type("r")
-        #expect(session.learned == nil) // once: only a nudge
+        #expect(session.learned == InputSession.Learned(text: flipped, language: .english, forGood: false)) // once: a nudge
         type("jtm ")
         session.handle(.escape, client: field)
         type("a") // the flip window closes: learned for good

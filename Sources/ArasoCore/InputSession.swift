@@ -124,13 +124,16 @@ public final class InputSession {
         /// The reading the keys were corrected to once: the engine leans to it, and choosing it
         /// again learns it for good.
         public var once: Int? = nil
+        /// Araso's own reading, the one it gives the keys without the dictionary.
+        public var own: Int? = nil
     }
 
-    /// A word the user corrected the same way twice, learned for good just now: the input method
-    /// says so under the caret, since from here on it goes in that way.
+    /// A correction the dictionary just took: the first one (the engine leans that way from now
+    /// on) or the second, the word learned for good. The input method shows it by the word.
     public struct Learned: Equatable {
         public let text: String
         public let language: Language
+        public var forGood = true
     }
 
     private struct Committed {
@@ -1238,7 +1241,8 @@ public final class InputSession {
         let own = engine.decide(keys, context: DecisionContext(app: app))
         return Readings(texts: cycle.map { rendered(keys, $0) }, languages: cycle, selected: selected,
                         remembered: own.remembered == nil ? nil : cycle.firstIndex(of: own.language),
-                        once: engine.nudge(for: keys, app: app).flatMap { cycle.firstIndex(of: $0) })
+                        once: engine.nudge(for: keys, app: app).flatMap { cycle.firstIndex(of: $0) },
+                        own: cycle.firstIndex(of: engine.ownDecision(keys, context: DecisionContext(app: app)).language))
     }
 
     /// The word being composed as the marked text, with its boundary while it is held.
@@ -1473,8 +1477,8 @@ public final class InputSession {
     private func record(_ keys: String, as language: Language, engineChoice: Language) {
         if let last = lastRecorded, last.keys == keys, last.language == language { return }
         lastRecorded = (keys, language)
-        if engine.learn(keys, as: language, engineChoice: engineChoice) {
-            learned = Learned(text: committedReading(keys, as: language), language: language)
+        if let learning = engine.learn(keys, as: language, engineChoice: engineChoice) {
+            learned = Learned(text: committedReading(keys, as: language), language: language, forGood: learning == .forGood)
         }
     }
 
