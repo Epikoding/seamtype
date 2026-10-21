@@ -308,9 +308,11 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
         case .forgot: L("%@, forgotten", learned.text)
         }
         view.setAccessibilityLabel(label)
+        // The round caps reach half the line's width past each end: inset by that, so the line
+        // spans the word and stops just short of the caret after it.
         let path = CGMutablePath()
-        path.move(to: CGPoint(x: 1, y: baseline))
-        path.addLine(to: CGPoint(x: width + 1, y: baseline))
+        path.move(to: CGPoint(x: 1 + thickness / 2, y: baseline))
+        path.addLine(to: CGPoint(x: max(width + 1 - thickness / 2, 1 + thickness / 2), y: baseline))
         let line = shape(path)
         let light = learned.learning == .forGood ? shape(path) : nil
         if learned.learning == .once { line.lineDashPattern = [0.01, 4] } // dots: round caps on near-empty dashes

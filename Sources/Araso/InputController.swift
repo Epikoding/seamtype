@@ -25,6 +25,8 @@ final class InputController: IMKInputController {
     /// a learned word's mark goes once the word went in (apps place the caret unreliably then;
     /// TextEdit answered with the same column two lines up).
     private var wordRect: NSRect?
+    /// The font the app reported for that word, to measure where a word just committed ends.
+    private var wordFont: NSFont?
 
     /// This client's session, rebuilt (after committing what was being typed) when a setting changed.
     @MainActor private var session: InputSession {
@@ -244,7 +246,7 @@ final class InputController: IMKInputController {
         } else {
             ReadingsHUD.hide()
         }
-        if let learned = session.learned { LearnedHUD.show(learned, word: wordRect ?? caretRect(client)) }
+        if let learned = session.learned { LearnedHUD.show(learned, word: learnedRect(learned) ?? caretRect(client)) }
     }
 
     /// Asks where the word being typed is while it is underlined; kept from before a key that
@@ -257,8 +259,9 @@ final class InputController: IMKInputController {
         let marked = client.markedRange()
         guard marked.location != NSNotFound, marked.length > 0 else { return }
         var start = NSRect.zero, end = NSRect.zero, last = NSRect.zero
-        _ = client.attributes(forCharacterIndex: 0, lineHeightRectangle: &start)
+        let attributes = client.attributes(forCharacterIndex: 0, lineHeightRectangle: &start)
         guard Self.plausible(start) else { return }
+        wordFont = (attributes?[NSAttributedString.Key.font] ?? attributes?[NSAttributedString.Key.font.rawValue]) as? NSFont
         _ = client.attributes(forCharacterIndex: marked.length, lineHeightRectangle: &end)
         if marked.length > 1 { _ = client.attributes(forCharacterIndex: marked.length - 1, lineHeightRectangle: &last) }
         // Positions only, never text.
@@ -273,6 +276,19 @@ final class InputController: IMKInputController {
             endX = start.minX + CGFloat(marked.length) * start.height * 0.55 // about a letter's width
         }
         wordRect = NSRect(x: start.minX, y: start.minY, width: endX - start.minX, height: start.height)
+    }
+
+    /// The committed word's place for the line under it: from where it started to just before the
+    /// caret after it, its own width in the app's font. The end the app reports while it was typed
+    /// is only an estimate (TextEdit gives none), and ran past the word into the caret. The
+    /// estimate stays when the font is unknown or the measure is far off (a zoomed text view).
+    @MainActor private func learnedRect(_ learned: InputSession.Learned) -> NSRect? {
+        guard var rect = wordRect else { return nil }
+        if let font = wordFont {
+            let measured = ceil((learned.text as NSString).size(withAttributes: [.font: font]).width)
+            if measured > 0, (rect.width * 0.5...rect.width * 1.5).contains(measured) { rect.size.width = measured }
+        }
+        return rect
     }
 
     /// A rect a text client gave that can be a place on screen: finite, line-sized, on a screen.
