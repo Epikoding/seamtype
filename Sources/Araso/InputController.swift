@@ -246,10 +246,13 @@ final class InputController: IMKInputController {
     /// start of the text (a word's mark landed at the start of the line).
     private func caretRect(_ client: IMKTextInput) -> NSRect {
         var rect = NSRect.zero
-        let selected = client.selectedRange()
-        if client.markedRange().location == NSNotFound, selected.location != NSNotFound {
+        let selected = client.selectedRange(), marked = client.markedRange()
+        // No marked text is NSNotFound in some apps and an empty range in others (TextEdit).
+        if marked.location == NSNotFound || marked.length == 0, selected.location != NSNotFound {
             var actual = NSRange(location: NSNotFound, length: 0)
             rect = client.firstRect(forCharacterRange: NSRange(location: selected.location, length: 0), actualRange: &actual)
+            // Positions only, never text.
+            log.debug("caret from selection \(rect.debugDescription, privacy: .public)")
             if rect.height > 0 { return rect }
         }
         _ = client.attributes(forCharacterIndex: 0, lineHeightRectangle: &rect)
