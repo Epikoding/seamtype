@@ -259,8 +259,8 @@ that way again. Correct the same keys the same way a second time and Araso alway
 particle after them (remember `ghostty` and you get `ghostty에`);
 switching a word back to Araso's own guess forgets it, and switching a remembered word to yet another
 reading moves the memory there the second time. Each correction runs a highlighter under the word
-for a moment, below the letters where underlines go, so it covers none. It takes the language's color
-(English gray, Korean blue, Japanese yellow): pale after the first correction, full when the word is
+for a moment, below the letters where underlines go, so it covers none. It takes the system's accent
+color, one for every language: pale after the first correction, full when the word is
 learned, and gray taken back from the right when switching back forgot it. In the
 switch key's list the marks sit on the language tags (`EN`, `KO`, `JA`): a filled pill on the reading
 the keys go in as when left alone, at first the one Araso picks, moving to the one it remembers
