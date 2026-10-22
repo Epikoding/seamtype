@@ -258,10 +258,10 @@ doesn't, so a stray switch doesn't do much. It is forgotten after 30 days unless
 that way again. Correct the same keys the same way a second time and Araso always writes them so, also with a
 particle after them (remember `ghostty` and you get `ghostty에`);
 switching a word back to Araso's own guess forgets it, and switching a remembered word to yet another
-reading moves the memory there the second time. Each correction runs a highlighter under the word
-for a moment, below the letters where underlines go, so it covers none. It takes the system's accent
-color, one for every language: pale after the first correction, full when the word is
-learned, and gray taken back from the right when switching back forgot it. In the
+reading moves the memory there the second time. Each correction pops a pill up under the word
+for a moment, where the switch key's list was: **Once** in a dotted ring after the first correction,
+**Remembered** filled in the accent color when the word is learned, and a gray **Forgotten**
+shrinking away when switching back forgot it. In the
 switch key's list the marks sit on the language tags (`EN`, `KO`, `JA`): a filled pill on the reading
 the keys go in as when left alone, at first the one Araso picks, moving to the one it remembers
 (corrected twice, or a word you added yourself) and back when you switch back; a dotted ring on a

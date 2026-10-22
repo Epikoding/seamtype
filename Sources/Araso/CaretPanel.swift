@@ -275,84 +275,128 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
     }
 }
 
-/// A correction the dictionary just took (`InputSession.learned`), as a highlighter stroke under
-/// the word: below the letters' baseline only, where the app's own underlines are (the line of text
-/// being typed, a spelling mark), so it covers no letter. In the accent color, as the pause icon
-/// under the caret is, whatever the language (the word's letters already show it): pale after the
-/// first correction, full once learned for good, both drawn left to right; gray taken back from
-/// the right when a switch back to Araso's own reading forgot the word.
+/// A correction the dictionary just took (`InputSession.learned`), as a pill that pops up under
+/// the word, where the switch key's list was, and goes after a moment: "Once" in a dotted ring
+/// after the first correction, "Remembered" filled in the accent color once learned for good (the
+/// list's marks, so the two read alike), and "Forgotten" struck through in gray, shrinking away,
+/// when a switch back to Araso's own reading forgot the word.
 @MainActor enum LearnedHUD {
     private static var panel: NSPanel?
     private static var shown = 0
-    /// The ease of a pen stroke: quick to start, settling at the end.
-    private static let stroke = CAMediaTimingFunction(controlPoints: 0.6, 0, 0.2, 1)
 
-    /// `word` is the word's line in screen coordinates; `descent` how far its letters' baseline is
-    /// above the line's bottom, the room the stroke takes. Without a width there is nothing to mark.
-    static func show(_ learned: InputSession.Learned, word: NSRect, descent: CGFloat) {
-        guard word != .zero, word.width >= 4 else { return }
-        // From just below the baseline to the line's bottom, at least a few points to be seen.
-        let height = min(max(descent - 1, 3), 8)
-        let size = NSSize(width: ceil(word.width), height: height)
+    private static let height: CGFloat = 18
+    /// Room around the pill for its shadow.
+    private static let margin: CGFloat = 6
+    private static let gap: CGFloat = 3
+
+    /// `word` is the word's line in screen coordinates; the pill starts where the word does.
+    static func show(_ learned: InputSession.Learned, word: NSRect) {
+        guard word != .zero else { return }
+        let text = switch learned.learning {
+        case .once: L("Once")
+        case .forGood: L("Remembered")
+        case .forgot: L("Forgotten")
+        }
+        let font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        let textSize = (text as NSString).size(withAttributes: [.font: font])
+        let pillSize = NSSize(width: ceil(textSize.width) + 14, height: height)
+        let size = NSSize(width: pillSize.width + margin * 2, height: pillSize.height + margin * 2)
         let panel = panel ?? CaretPanel.make(size: size)
         self.panel = panel
+
         let view = NSView(frame: NSRect(origin: .zero, size: size))
         view.wantsLayer = true
         view.setAccessibilityElement(true)
-        let label = switch learned.learning {
+        let spoken = switch learned.learning {
         case .once: L("%@ → %@, once", learned.text, learned.language.displayName)
         case .forGood: L("%@ → always %@", learned.text, learned.language.displayName)
         case .forgot: L("%@, forgotten", learned.text)
         }
-        view.setAccessibilityLabel(label)
-        // A line as thick as the band, butt-ended, so drawing it is the band filling in.
-        let path = CGMutablePath()
-        path.move(to: CGPoint(x: 0, y: height / 2))
-        path.addLine(to: CGPoint(x: size.width, y: height / 2))
-        let band = CAShapeLayer()
-        band.path = path
-        band.lineWidth = height
-        band.lineCap = .butt
-        band.fillColor = nil
+        view.setAccessibilityLabel(spoken)
+        // Grows from its top left corner, the word's side.
+        let pill = CALayer()
+        pill.anchorPoint = CGPoint(x: 0, y: 1)
+        pill.bounds = CGRect(origin: .zero, size: pillSize)
+        pill.position = CGPoint(x: margin, y: margin + pillSize.height)
+        let shape = CAShapeLayer()
+        shape.frame = pill.bounds
+        let filled = learned.learning == .forGood
+        // A ring's stroke stays inside the pill.
+        shape.path = CGPath(roundedRect: pill.bounds.insetBy(dx: filled ? 0 : 0.65, dy: filled ? 0 : 0.65),
+                            cornerWidth: 5, cornerHeight: 5, transform: nil)
+        shape.shadowPath = shape.path
+        shape.shadowOpacity = 0.18
+        shape.shadowRadius = 3
+        shape.shadowOffset = CGSize(width: 0, height: -1)
+        let label = CATextLayer()
+        label.contentsScale = NSScreen.screens.first { $0.frame.contains(word.origin) }?.backingScaleFactor ?? 2
+        label.alignmentMode = .center
+        label.frame = CGRect(x: 0, y: (height - ceil(textSize.height)) / 2, width: pillSize.width, height: ceil(textSize.height))
         view.effectiveAppearance.performAsCurrentDrawingAppearance {
-            let (color, alpha): (NSColor, CGFloat) = switch learned.learning {
-            case .once: (.controlAccentColor, 0.35)
-            case .forGood: (.controlAccentColor, 0.9)
-            case .forgot: (.systemGray, 0.45)
+            let ink: NSColor
+            switch learned.learning {
+            case .forGood:
+                shape.fillColor = NSColor.controlAccentColor.cgColor
+                ink = .alternateSelectedControlTextColor
+            case .once:
+                shape.fillColor = NSColor.controlBackgroundColor.cgColor
+                shape.strokeColor = NSColor.controlAccentColor.cgColor
+                shape.lineWidth = 1.3
+                shape.lineCap = .round
+                shape.lineDashPattern = [0.01, 2.6] // dots: round caps on near-empty dashes
+                ink = .controlAccentColor
+            case .forgot:
+                shape.fillColor = NSColor.controlBackgroundColor.cgColor
+                shape.strokeColor = NSColor.separatorColor.cgColor
+                shape.lineWidth = 1
+                ink = .secondaryLabelColor
             }
-            band.strokeColor = color.withAlphaComponent(alpha).cgColor
+            var attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: ink]
+            if learned.learning == .forgot { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
+            label.string = NSAttributedString(string: text, attributes: attributes)
         }
-        view.layer?.addSublayer(band)
+        pill.addSublayer(shape)
+        pill.addSublayer(label)
+        view.layer?.addSublayer(pill)
         panel.contentView = view
 
-        var origin = NSPoint(x: word.minX, y: word.minY)
-        if let visible = (NSScreen.screens.first { $0.frame.contains(word.origin) } ?? NSScreen.main)?.visibleFrame {
-            origin.y = max(origin.y, visible.minY)
-        }
+        var origin = CaretPanel.origin(for: size, caret: word, gap: gap - margin, centered: false)
+        origin.x -= margin
         panel.setFrame(NSRect(origin: origin, size: size), display: true)
         panel.alphaValue = 1
         panel.orderFrontRegardless()
 
-        var stay = 1.3
-        if learned.learning == .forgot {
-            // Down already, taken back from the right.
-            band.strokeEnd = 0
-            stay = 0.6
-            if !reduceMotion {
-                let back = drawn(from: 1, to: 0, duration: 0.42)
-                back.beginTime = CACurrentMediaTime() + 0.12
-                back.fillMode = .backwards
-                band.add(back, forKey: "back")
-            }
-        } else if !reduceMotion {
-            band.add(drawn(from: 0, to: 1, duration: 0.32), forKey: "draw")
+        if !reduceMotion {
+            let grow = CABasicAnimation(keyPath: "transform.scale")
+            grow.fromValue = 0.6
+            grow.toValue = 1
+            grow.duration = 0.26
+            grow.timingFunction = springy
+            let appear = CABasicAnimation(keyPath: "opacity")
+            appear.fromValue = 0
+            appear.toValue = 1
+            appear.duration = 0.12
+            pill.add(grow, forKey: "grow")
+            pill.add(appear, forKey: "appear")
         }
 
         shown += 1
         let current = shown
-        DispatchQueue.main.asyncAfter(deadline: .now() + stay) {
+        let forgot = learned.learning == .forgot
+        DispatchQueue.main.asyncAfter(deadline: .now() + (forgot ? 0.9 : 1.5)) {
             guard current == shown else { return }
-            animate(0.5, nil, { panel.animator().alphaValue = 0 }) {
+            if forgot, !reduceMotion {
+                // Shrinks back into the word's corner as it goes.
+                let shrink = CABasicAnimation(keyPath: "transform.scale")
+                shrink.fromValue = 1
+                shrink.toValue = 0.5
+                shrink.duration = 0.36
+                shrink.timingFunction = CAMediaTimingFunction(name: .easeIn)
+                shrink.fillMode = .forwards
+                shrink.isRemovedOnCompletion = false
+                pill.add(shrink, forKey: "shrink")
+            }
+            animate(forgot ? 0.36 : 0.4, nil, { panel.animator().alphaValue = 0 }) {
                 if current == shown { panel.orderOut(nil) }
             }
         }
@@ -361,14 +405,5 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
     static func hide() {
         shown += 1
         panel?.orderOut(nil)
-    }
-
-    private static func drawn(from: CGFloat, to: CGFloat, duration: TimeInterval) -> CABasicAnimation {
-        let draw = CABasicAnimation(keyPath: "strokeEnd")
-        draw.fromValue = from
-        draw.toValue = to
-        draw.duration = duration
-        draw.timingFunction = stroke
-        return draw
     }
 }

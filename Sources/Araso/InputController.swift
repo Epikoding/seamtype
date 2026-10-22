@@ -247,9 +247,7 @@ final class InputController: IMKInputController {
             ReadingsHUD.hide()
         }
         if let learned = session.learned {
-            let word = learnedRect(learned) ?? caretRect(client)
-            // The font's descent is the room below the baseline; a fifth of the line without one.
-            LearnedHUD.show(learned, word: word, descent: wordFont.map { -$0.descender } ?? word.height * 0.2)
+            LearnedHUD.show(learned, word: learnedRect(learned) ?? caretRect(client))
         }
     }
 
