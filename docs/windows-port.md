@@ -57,10 +57,12 @@ new. This file maps each macOS piece to its Windows one and says where the two d
 | --- | --- | --- |
 | IMKInputController, `handle(_:client:)` | `ITfKeyEventSink` (`windows/tip/TextService.cpp`) | Keys go to the host; a key the session doesn't take still reaches the app (Space after a word, as on macOS). |
 | `IMKClient` (`TextClient`) | `SnapshotClient` + edit sessions | UTF-16 offsets in both (NSRange ↔ ACP). A field without ACP positions still works, without the features that read back (a switch right after a commit, URLs). |
-| marked text | TSF composition + `ITfDisplayAttributeProvider` | Underlined, as macOS draws marked text; a phrase being converted to kanji is drawn as the converted clause (thick). In classic apps, the host's `WordWindow` at the caret (see above). |
+| marked text, clause underlines | TSF composition + `ITfDisplayAttributeProvider` | Underlined, as macOS draws marked text; while converting, the reading thin and the clause the candidates are for thick. In classic apps, the host's `WordWindow` at the caret (see above). |
 | `IMKCandidates` | the host's candidate window (`windows/host/Ui.cpp`) | Numbered rows, the highlight moving with Space/↓/↑; a click chooses. |
 | `PauseHUD` | the host's `PauseHud` | Araso's icon under the caret for a moment, struck through when paused. |
-| input menu (`menu()`) | the input indicator's menu (`LangBarButton`, `GUID_LBI_INPUTMODE`) | The same items and names, built by `ServiceRuntime.menu`. |
+| `ReadingsHUD` | the host's `ReadingsWindow` | The readings a switch key went through, under the word, with their tags, the pill and the dotted ring. |
+| `LearnedHUD` | the host's `LearnedLine` | The line under the word after a correction: gray dots, the accent line with its streak, the gray line taken back. |
+| input menu (`menu()`) | the input indicator's menu (`LangBarButton`, `GUID_LBI_INPUTMODE`) | The same items and names, built by `ServiceRuntime.menu`, "Changed by the Dictionary" included. |
 | bundle identifier (`apps.json`) | exe name, lowercase (`notepad.exe`, `code.exe`) | A key ending in `.` still matches as a prefix. |
 | right ⌥ tap (switch key) | right Alt tap, or the 한/영 key | On Korean keyboards right Alt is 한/영 (`VK_HANGUL`), which switches as it goes down (some keyboards send no release for it). A lone right Alt's release is taken, so the app doesn't open its menu bar. |
 | right ⇧ tap, ⌥Space, Esc, ⇧Esc | right Shift tap, Alt+Space, Esc, Shift+Esc | Alt+Space is taken only when chosen. |
@@ -83,8 +85,6 @@ new. This file maps each macOS piece to its Windows one and says where the two d
 
 ## Not on Windows
 
-- The readings list, the correction marks and "Changed by the Dictionary" aren't on main yet;
-  they come when the macOS branch that has them is merged (`UIState` is where they'd go).
 - `scripts/typing-test`, `scripts/record-demo`: macOS automation.
 - UI-less mode for full-screen games (`ITfUIElement`): the candidate window is a topmost window,
   which an exclusive full-screen game may hide.

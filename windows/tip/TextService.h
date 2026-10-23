@@ -124,7 +124,7 @@ private:
     Json Snapshot(TfEditCookie cookie, ITfContext *context, bool &masked);
     Json Rects(TfEditCookie cookie, ITfContext *context);
     void ApplyOps(TfEditCookie cookie, ITfContext *context, const Json &ops, bool converting);
-    void ApplyAttributes(TfEditCookie cookie, ITfContext *context, ITfRange *range, bool converting);
+    void ApplyAttributes(TfEditCookie cookie, ITfContext *context, ITfRange *range, bool converting, const Json &clause);
     void ClearAttributes(TfEditCookie cookie, ITfContext *context, ITfRange *range);
     void EndComposition(TfEditCookie cookie);
     void MoveCaretToEnd(TfEditCookie cookie, ITfContext *context, ITfRange *range);

@@ -36,6 +36,8 @@ private:
     HWND window_ = nullptr;
     std::map<int, Client> clients_;
     CandidateWindow candidates_;
+    ReadingsWindow readings_;
+    LearnedLine learned_;
     PauseHud pause_;
     WordWindow word_;
     int wordFor_ = 0;

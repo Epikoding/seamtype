@@ -422,4 +422,222 @@ LRESULT CALLBACK PauseHud::Proc(HWND window, UINT message, WPARAM wParam, LPARAM
     return DefWindowProcW(window, message, wParam, lParam);
 }
 
+// MARK: - Readings
+
+namespace {
+const wchar_t *kReadingsClass = L"ArasoReadings";
+const wchar_t *kLearnedClass = L"ArasoLearned";
+constexpr UINT_PTR kFrameTimer = 7;
+}
+
+void ReadingsWindow::Show(const std::vector<Row> &rows, int selected, int pick, int once, const RECT &anchor) {
+    if (rows.empty() || anchor.bottom <= anchor.top) return Hide();
+    RegisterOnce(kReadingsClass, Proc, true);
+    if (!window_) window_ = MakePopup(kReadingsClass, this);
+    if (!window_) return;
+    rows_ = rows;
+    selected_ = selected;
+    pick_ = pick;
+    once_ = once;
+    dpi_ = ui::DpiAt(anchor);
+    HDC screen = GetDC(nullptr);
+    HFONT font = ui::Font(dpi_, 100), bold = ui::Font(dpi_, 80, true);
+    HGDIOBJ old = SelectObject(screen, bold);
+    int tags = 0, texts = 0;
+    for (const auto &row : rows_) {
+        SIZE extent = {};
+        GetTextExtentPoint32W(screen, row.tag.c_str(), static_cast<int>(row.tag.size()), &extent);
+        tags = std::max(tags, static_cast<int>(extent.cx));
+    }
+    SelectObject(screen, font);
+    for (const auto &row : rows_) {
+        SIZE extent = {};
+        GetTextExtentPoint32W(screen, row.text.c_str(), static_cast<int>(row.text.size()), &extent);
+        texts = std::max(texts, static_cast<int>(extent.cx));
+    }
+    SelectObject(screen, old);
+    DeleteObject(font);
+    DeleteObject(bold);
+    ReleaseDC(nullptr, screen);
+    tagWidth_ = tags + ui::Scale(10, dpi_);
+    int width = std::max(ui::Scale(96, dpi_), ui::Scale(14, dpi_) + tagWidth_ + texts + ui::Scale(16, dpi_));
+    SIZE size = {width, static_cast<LONG>(rows_.size()) * ui::Scale(24, dpi_) + ui::Scale(6, dpi_)};
+    POINT origin = Place(anchor, size, ui::Scale(4, dpi_));
+    SetWindowPos(window_, HWND_TOPMOST, origin.x, origin.y, size.cx, size.cy, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    InvalidateRect(window_, nullptr, FALSE);
+}
+
+void ReadingsWindow::Hide() {
+    if (window_) ShowWindow(window_, SW_HIDE);
+    rows_.clear();
+}
+
+void ReadingsWindow::Paint(HDC target) {
+    RECT client;
+    GetClientRect(window_, &client);
+    HDC dc = CreateCompatibleDC(target);
+    HBITMAP bitmap = CreateCompatibleBitmap(target, client.right, client.bottom);
+    HGDIOBJ oldBitmap = SelectObject(dc, bitmap);
+    ui::Theme theme = ui::CurrentTheme();
+    HBRUSH background = CreateSolidBrush(theme.background);
+    FillRect(dc, &client, background);
+    DeleteObject(background);
+    HFONT font = ui::Font(dpi_, 100), tagFont = ui::Font(dpi_, 80), pillFont = ui::Font(dpi_, 80, true);
+    SetBkMode(dc, TRANSPARENT);
+    int inset = ui::Scale(3, dpi_), rowHeight = ui::Scale(24, dpi_);
+    for (int k = 0; k < static_cast<int>(rows_.size()); k++) {
+        RECT row = {inset, inset + k * rowHeight, client.right - inset, inset + (k + 1) * rowHeight};
+        bool on = k == selected_;
+        if (on) ui::FillRounded(dc, row, ui::Scale(5, dpi_), theme.accent);
+        RECT tag = {row.left + ui::Scale(6, dpi_), row.top + (rowHeight - ui::Scale(16, dpi_)) / 2,
+                    row.left + ui::Scale(6, dpi_) + tagWidth_, row.top + (rowHeight + ui::Scale(16, dpi_)) / 2};
+        COLORREF tagInk = on ? theme.accentText : theme.secondary;
+        if (k == pick_) {
+            // The pill takes the ink, and the tag turns to what's under it.
+            ui::FillRounded(dc, tag, ui::Scale(4, dpi_), on ? theme.accentText : theme.accent);
+            tagInk = on ? theme.accent : theme.accentText;
+        } else if (k == once_) {
+            Gdiplus::Graphics graphics(dc);
+            graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+            Gdiplus::Pen pen(Gdiplus::Color(255, GetRValue(tagInk), GetGValue(tagInk), GetBValue(tagInk)),
+                             static_cast<float>(ui::Scale(13, dpi_)) / 10);
+            pen.SetDashStyle(Gdiplus::DashStyleDot);
+            graphics.DrawRectangle(&pen, static_cast<float>(tag.left), static_cast<float>(tag.top),
+                                   static_cast<float>(tag.right - tag.left), static_cast<float>(tag.bottom - tag.top));
+        }
+        SelectObject(dc, k == pick_ ? pillFont : tagFont);
+        SetTextColor(dc, tagInk);
+        DrawTextW(dc, rows_[k].tag.c_str(), -1, &tag, DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
+        RECT text = row;
+        text.left = tag.right + ui::Scale(6, dpi_);
+        SelectObject(dc, font);
+        SetTextColor(dc, on ? theme.accentText : theme.text);
+        DrawTextW(dc, rows_[k].text.c_str(), -1, &text, DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
+    }
+    BitBlt(target, 0, 0, client.right, client.bottom, dc, 0, 0, SRCCOPY);
+    SelectObject(dc, oldBitmap);
+    DeleteObject(bitmap);
+    DeleteObject(font);
+    DeleteObject(tagFont);
+    DeleteObject(pillFont);
+    DeleteDC(dc);
+}
+
+LRESULT CALLBACK ReadingsWindow::Proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+    auto *self = reinterpret_cast<ReadingsWindow *>(GetWindowLongPtrW(window, GWLP_USERDATA));
+    switch (message) {
+    case WM_MOUSEACTIVATE:
+        return MA_NOACTIVATE;
+    case WM_NCHITTEST:
+        return HTTRANSPARENT;
+    case WM_PAINT: {
+        PAINTSTRUCT paint;
+        HDC dc = BeginPaint(window, &paint);
+        if (self) self->Paint(dc);
+        EndPaint(window, &paint);
+        return 0;
+    }
+    case WM_ERASEBKGND:
+        return 1;
+    }
+    return DefWindowProcW(window, message, wParam, lParam);
+}
+
+// MARK: - Correction line
+
+void LearnedLine::Show(const std::string &learning, const RECT &word) {
+    if (word.right - word.left < 4 || word.bottom <= word.top) return;
+    WNDCLASSEXW cls = {sizeof cls};
+    if (!GetClassInfoExW(GetModuleHandleW(nullptr), kLearnedClass, &cls)) {
+        cls.lpfnWndProc = Proc;
+        cls.hInstance = GetModuleHandleW(nullptr);
+        cls.lpszClassName = kLearnedClass;
+        RegisterClassExW(&cls);
+    }
+    if (!window_) {
+        window_ = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED | WS_EX_TRANSPARENT,
+                                  kLearnedClass, L"", WS_POPUP, 0, 0, 1, 1, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+        if (!window_) return;
+        SetWindowLongPtrW(window_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
+    }
+    learning_ = learning;
+    dpi_ = ui::DpiAt(word);
+    width_ = word.right - word.left + 2;
+    height_ = ui::Scale(4, dpi_);
+    // Just under the letters, where the underline of the word being typed was.
+    SetWindowPos(window_, HWND_TOPMOST, word.left - 1, word.bottom - height_ / 2, width_, height_,
+                 SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    started_ = GetTickCount();
+    Render();
+    SetTimer(window_, kFrameTimer, 16, nullptr);
+}
+
+/// One frame: the line drawn (or taken back) by the time since it started, then a fade.
+void LearnedLine::Render() {
+    double t = (GetTickCount() - started_) / 1000.0;
+    bool forGood = learning_ == "forGood", forgot = learning_ == "forgot";
+    double stay = forgot ? 0.5 : 1.4, fade = 0.3;
+    if (t > stay + fade) {
+        KillTimer(window_, kFrameTimer);
+        ShowWindow(window_, SW_HIDE);
+        return;
+    }
+    auto ease = [](double x) { x = std::max(0.0, std::min(1.0, x)); return 1 - (1 - x) * (1 - x) * (1 - x); };
+    double drawn = forgot ? 1 - ease((t - 0.08) / 0.42) : ease(t / (forGood ? 0.32 : 0.3));
+    double alpha = t > stay ? std::max(0.0, 1 - (t - stay) / fade) : 1;
+
+    BITMAPINFO info = {};
+    info.bmiHeader.biSize = sizeof info.bmiHeader;
+    info.bmiHeader.biWidth = width_;
+    info.bmiHeader.biHeight = -height_;
+    info.bmiHeader.biPlanes = 1;
+    info.bmiHeader.biBitCount = 32;
+    void *bits = nullptr;
+    HDC screen = GetDC(nullptr);
+    HDC dc = CreateCompatibleDC(screen);
+    HBITMAP bitmap = CreateDIBSection(screen, &info, DIB_RGB_COLORS, &bits, nullptr, 0);
+    HGDIOBJ old = SelectObject(dc, bitmap);
+    {
+        Gdiplus::Bitmap canvas(width_, height_, width_ * 4, PixelFormat32bppPARGB, static_cast<BYTE *>(bits));
+        Gdiplus::Graphics graphics(&canvas);
+        graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+        graphics.Clear(Gdiplus::Color(0, 0, 0, 0));
+        ui::Theme theme = ui::CurrentTheme();
+        COLORREF ink = forGood ? theme.accent : theme.secondary;
+        float thickness = static_cast<float>(ui::Scale(20, dpi_)) / 10;
+        float y = height_ / 2.0f, end = 1 + static_cast<float>(drawn) * (width_ - 2);
+        Gdiplus::Pen pen(Gdiplus::Color(255, GetRValue(ink), GetGValue(ink), GetBValue(ink)), thickness);
+        pen.SetStartCap(Gdiplus::LineCapRound);
+        pen.SetEndCap(Gdiplus::LineCapRound);
+        if (learning_ == "once") pen.SetDashStyle(Gdiplus::DashStyleDot);
+        if (end > 1.5f) graphics.DrawLine(&pen, 1.0f, y, end, y);
+        if (forGood && t > 0.34 && t < 0.86) {
+            // The streak of light, run along the line once it is down.
+            float streak = static_cast<float>(ui::Scale(10, dpi_));
+            float head = static_cast<float>(ease((t - 0.34) / 0.52)) * (width_ + streak);
+            Gdiplus::Pen light(Gdiplus::Color(230, 255, 255, 255), thickness);
+            float from = std::max(1.0f, head - streak), to = std::min(static_cast<float>(width_ - 1), head);
+            if (to > from) graphics.DrawLine(&light, from, y, to, y);
+        }
+    }
+    POINT source = {0, 0};
+    SIZE size = {width_, height_};
+    BLENDFUNCTION blend = {AC_SRC_OVER, 0, static_cast<BYTE>(alpha * 255), AC_SRC_ALPHA};
+    UpdateLayeredWindow(window_, screen, nullptr, &size, dc, &source, 0, &blend, ULW_ALPHA);
+    SelectObject(dc, old);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+    ReleaseDC(nullptr, screen);
+}
+
+LRESULT CALLBACK LearnedLine::Proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+    auto *self = reinterpret_cast<LearnedLine *>(GetWindowLongPtrW(window, GWLP_USERDATA));
+    if (message == WM_TIMER && wParam == kFrameTimer && self) {
+        self->Render();
+        return 0;
+    }
+    if (message == WM_MOUSEACTIVATE) return MA_NOACTIVATE;
+    return DefWindowProcW(window, message, wParam, lParam);
+}
+
 }  // namespace araso

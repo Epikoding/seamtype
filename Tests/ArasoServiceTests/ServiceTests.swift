@@ -12,6 +12,8 @@ final class FakeDocument {
     var composition: NSRange?
     var cursor = 0
     var readable = true
+    /// The clause the last mark drew as the one being converted.
+    var clause: [Int]?
 
     func context() -> TextContext {
         let ns = text as NSString
@@ -31,8 +33,10 @@ final class FakeDocument {
             let length = (op.text as NSString).length
             if op.kind == .mark, length > 0 {
                 composition = NSRange(location: target.location, length: length)
+                clause = op.clause
             } else {
                 composition = nil
+                clause = nil
             }
             cursor = target.location + length
         }
@@ -187,6 +191,22 @@ final class Harness {
         // The lone Alt's release is taken, so the app doesn't open its menu bar.
         #expect(h.tap(Keys.rightAlt, Keys.rightAltUp))
         #expect(h.document.text == "ㅗ디ㅣㅐ ")
+        // The readings it went through, listed under the word.
+        #expect(h.ui?.readings?.tags.contains("KO") == true)
+        #expect(h.ui?.readings?.texts.contains("ㅗ디ㅣㅐ") == true)
+    }
+
+    @Test func aCorrectionMadeTwiceIsMarkedAndListedInTheMenu() throws {
+        let h = try Harness()
+        for _ in 0..<2 {
+            h.type("hello ")
+            _ = h.tap(Keys.rightAlt, Keys.rightAltUp)
+            h.type("x ")
+        }
+        #expect(h.ui?.learned == nil || h.ui?.learned?.learning != nil)
+        h.type("hello ")
+        let menu = h.send(ServiceRequest(op: .menu, client: h.client)).reply.menu ?? []
+        #expect(menu.contains { $0.id == "forget:hello" })
     }
 
     @Test func hangulKeyIsTheRightAlt() throws {
@@ -479,6 +499,7 @@ final class Harness {
         let candidates = h.ui?.candidates?.texts ?? []
         #expect(candidates.contains("変換"))
         #expect(h.lastReply.converting == true)
+        #expect(h.document.clause != nil) // the clause the candidates are for
         guard let index = candidates.firstIndex(of: "変換") else { return }
         var choose = ServiceRequest(op: .choose, client: h.client)
         choose.index = index
