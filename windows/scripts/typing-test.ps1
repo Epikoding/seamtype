@@ -39,9 +39,10 @@ public static class Keys {
 
 $profile = "0412:{6D6C7D5F-3B7F-4F0E-9A2C-417261736F01}{6D6C7D5F-3B7F-4F0E-9A2C-417261736F02}"
 # Only the installer is waited for: -Wait would also wait for the host it starts, which stays.
-$installer = Start-Process -FilePath $Installer -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -PassThru
-$installer.WaitForExit()
-if ($installer.ExitCode -ne 0) { throw "install failed ($($installer.ExitCode))" }
+# (Not $installer: PowerShell's names ignore case, and the [string] parameter would take the process.)
+$setup = Start-Process -FilePath $Installer -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -PassThru
+$setup.WaitForExit()
+if ($setup.ExitCode -ne 0) { throw "install failed ($($setup.ExitCode))" }
 Write-Host "installed"
 $folder = "$env:ProgramFiles\Araso"
 if (-not (Test-Path "$folder\ArasoTip.dll")) { throw "not installed in $folder" }
