@@ -59,7 +59,9 @@ Source: "{#Stage}\Resources\*"; DestDir: "{app}\Resources"; Flags: ignoreversion
 ; next restart.
 Source: "{#Stage}\ArasoTip.dll"; DestDir: "{app}"; Flags: ignoreversion regserver restartreplace uninsrestartdelete
 Source: "{#Stage}\x86\ArasoTip.dll"; DestDir: "{app}\x86"; Flags: ignoreversion regserver 32bit restartreplace uninsrestartdelete
-Source: "{#Stage}\arm64\ArasoTip.dll"; DestDir: "{app}\arm64"; Flags: ignoreversion restartreplace uninsrestartdelete; Check: IsArm64
+; ARM64: ArasoTip.dll is an ARM64X forwarder to ArasoTipArm64.dll (ARM64 apps) and ArasoTipX64.dll
+; (x64 apps under emulation), which share the one registration.
+Source: "{#Stage}\arm64\*.dll"; DestDir: "{app}\arm64"; Flags: ignoreversion restartreplace uninsrestartdelete; Check: IsArm64
 Source: "{#Stage}\vim\*"; DestDir: "{app}\vim"; Flags: ignoreversion
 
 [Registry]

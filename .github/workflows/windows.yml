@@ -80,6 +80,14 @@ jobs:
         run: cmake -S windows -B build/windows -A ${{ matrix.arch }} -DARASO_VERSION=${{ env.ARASO_VERSION }} -DARASO_HOST=${{ matrix.arch == 'Win32' && 'OFF' || 'ON' }} "-DARASO_PUBLISHER=${{ vars.ARASO_WINDOWS_PUBLISHER }}"
       - name: Build
         run: cmake --build build/windows --config Release
+      - if: matrix.arch == 'ARM64'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64_arm64
+      - name: ARM64X forwarder
+        if: matrix.arch == 'ARM64'
+        shell: pwsh
+        run: windows/scripts/arm64x-forwarder.ps1 build/windows/Release
       - uses: actions/upload-artifact@v4
         with:
           name: cpp-${{ matrix.arch }}
@@ -103,7 +111,11 @@ jobs:
           Copy-Item -Recurse build/artifacts/swift-x64/* $stage
           Copy-Item build/artifacts/cpp-x64/ArasoHost.exe, build/artifacts/cpp-x64/ArasoTip.dll $stage
           Copy-Item build/artifacts/cpp-Win32/ArasoTip.dll "$stage/x86"
-          Copy-Item build/artifacts/cpp-ARM64/ArasoTip.dll "$stage/arm64"
+          # ARM64: the ARM64X forwarder as ArasoTip.dll, which both ARM64 and x64 apps load, beside
+          # the two builds it hands them to (windows/scripts/arm64x-forwarder.ps1).
+          Copy-Item build/artifacts/cpp-ARM64/ArasoTipForwarder.dll "$stage/arm64/ArasoTip.dll"
+          Copy-Item build/artifacts/cpp-ARM64/ArasoTip.dll "$stage/arm64/ArasoTipArm64.dll"
+          Copy-Item build/artifacts/cpp-x64/ArasoTip.dll "$stage/arm64/ArasoTipX64.dll"
           Copy-Item scripts/vim/araso.lua, scripts/vim/araso.vim "$stage/vim"
           # The Swift runtime needs the Visual C++ runtime, which a fresh Windows may not have: beside it.
           foreach ($dll in 'vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll') {
@@ -171,10 +183,15 @@ jobs:
           gh release upload $tag build/Araso-Setup.exe "build/Araso-Setup-$env:ARASO_VERSION.exe" --clobber --repo ${{ github.repository }}
 
   typing:
-    # Real key events into Notepad through the installed input method.
+    # Real key events into a WPF TextBox and Notepad through the installed input method; on ARM64
+    # Windows those apps load the ARM64 text service (the installer registers it there).
     needs: package
-    runs-on: windows-latest
-    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-latest, windows-11-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4

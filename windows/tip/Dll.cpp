@@ -57,6 +57,20 @@ std::wstring ModulePath() {
     return path;
 }
 
+/// The DLL COM loads for this text service. On ARM64 Windows that is `ArasoTip.dll`, an ARM64X
+/// forwarder beside the real builds (ArasoTipArm64.dll, ArasoTipX64.dll): ARM64 apps and x64
+/// apps under emulation read the same registry, so one path has to load in both.
+std::wstring ServerPath() {
+    std::wstring path = ModulePath();
+    size_t slash = path.find_last_of(L"\\/");
+    std::wstring name = slash == std::wstring::npos ? path : path.substr(slash + 1);
+    if (_wcsicmp(name.c_str(), L"ArasoTipArm64.dll") == 0 || _wcsicmp(name.c_str(), L"ArasoTipX64.dll") == 0) {
+        std::wstring forwarder = path.substr(0, slash + 1) + L"ArasoTip.dll";
+        if (GetFileAttributesW(forwarder.c_str()) != INVALID_FILE_ATTRIBUTES) return forwarder;
+    }
+    return path;
+}
+
 bool SetValue(HKEY key, const wchar_t *name, const std::wstring &value) {
     return RegSetValueExW(key, name, 0, REG_SZ, reinterpret_cast<const BYTE *>(value.c_str()),
                           static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t))) == ERROR_SUCCESS;
@@ -73,7 +87,7 @@ bool RegisterServer() {
     HKEY server = nullptr;
     bool ok = RegCreateKeyExW(key, L"InprocServer32", 0, nullptr, 0, KEY_WRITE, nullptr, &server, nullptr) == ERROR_SUCCESS;
     if (ok) {
-        ok = SetValue(server, nullptr, ModulePath()) && SetValue(server, L"ThreadingModel", L"Apartment");
+        ok = SetValue(server, nullptr, ServerPath()) && SetValue(server, L"ThreadingModel", L"Apartment");
         RegCloseKey(server);
     }
     RegCloseKey(key);

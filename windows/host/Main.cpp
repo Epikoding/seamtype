@@ -4,6 +4,8 @@
 //   --vim insert|normal|off [--app <exe>]   vim's mode (scripts/vim), passed to the host
 //   --register | --unregister    turn the input method on or off for this user (the installer)
 //   --selftest                   load every model through the bridge and exit 0 when all work
+//   --load-text-service          create the text service as TSF does (COM, in this process) and say
+//                                which DLL came: on ARM64 Windows, the forwarder's x64 build here
 #include "../common/Common.h"
 #include "Bridge.h"
 #include "Server.h"
@@ -15,6 +17,7 @@
 #include <gdiplus.h>
 #include <shellapi.h>
 
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -107,6 +110,39 @@ int SelfTest() {
     return ok ? 0 : 1;
 }
 
+/// Creates the text service through COM, as TSF does in an app, and says which DLL served it.
+int LoadTextService() {
+    HRESULT init = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    CLSID clsid = {};
+    CLSIDFromString(L"{6D6C7D5F-3B7F-4F0E-9A2C-417261736F01}", &clsid);
+    IUnknown *service = nullptr;
+    HRESULT hr = CoCreateInstance(clsid, nullptr, CLSCTX_INPROC_SERVER, IID_IUnknown, reinterpret_cast<void **>(&service));
+    std::string line = "text service: ";
+    if (SUCCEEDED(hr) && service) {
+        line += "created";
+        for (const wchar_t *name : {L"ArasoTipX64.dll", L"ArasoTipArm64.dll", L"ArasoTip.dll"}) {
+            if (HMODULE module = GetModuleHandleW(name)) {
+                wchar_t path[MAX_PATH] = L"";
+                GetModuleFileNameW(module, path, MAX_PATH);
+                line += ", " + Utf8(path);
+            }
+        }
+        service->Release();
+    } else {
+        char code[16];
+        snprintf(code, sizeof code, "%08lx", static_cast<unsigned long>(hr));
+        line += std::string("FAILED (") + code + ")";
+    }
+    line += "\r\n";
+    if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+        DWORD written = 0;
+        WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), line.c_str(), static_cast<DWORD>(line.size()), &written, nullptr);
+    }
+    Log("%s", line.c_str());
+    if (SUCCEEDED(init)) CoUninitialize();
+    return SUCCEEDED(hr) ? 0 : 1;
+}
+
 }  // namespace
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
@@ -114,6 +150,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     if (Has(args, L"--vim")) return Vim(args);
     if (Has(args, L"--register")) return Register(true);
     if (Has(args, L"--unregister")) return Register(false);
+    if (Has(args, L"--load-text-service")) return LoadTextService();
 
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     INITCOMMONCONTROLSEX controls = {sizeof controls, ICC_STANDARD_CLASSES | ICC_LISTVIEW_CLASSES | ICC_TAB_CLASSES |
