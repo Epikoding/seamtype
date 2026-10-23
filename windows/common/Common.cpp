@@ -130,7 +130,7 @@ void Log(const char *format, ...) {
         HANDLE file = CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS, 0, nullptr);
         if (file != INVALID_HANDLE_VALUE) {
             char line[600];
-            int length = std::snprintf(line, sizeof line, "[%lu] %s\r\n", GetCurrentProcessId(), buffer);
+            int length = std::snprintf(line, sizeof line, "[%lu %lu] %s\r\n", GetCurrentProcessId(), GetTickCount(), buffer);
             DWORD written = 0;
             WriteFile(file, line, static_cast<DWORD>(length), &written, nullptr);
             CloseHandle(file);

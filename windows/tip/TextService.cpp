@@ -20,6 +20,12 @@ UINT PendingMessage() {
     return message;
 }
 
+/// The key-by-key log for the typing test (`ARASO_LOG`): what happened, never which key or what text.
+bool Verbose() {
+    static const bool verbose = std::getenv("ARASO_LOG") != nullptr;
+    return verbose;
+}
+
 bool IsModifier(WPARAM vk) {
     switch (vk) {
     case VK_SHIFT: case VK_LSHIFT: case VK_RSHIFT:
@@ -298,6 +304,7 @@ STDMETHODIMP TextService::OnTestKeyDown(ITfContext *context, WPARAM wParam, LPAR
         return S_OK;
     }
     *eaten = HostTakes(wParam, lParam, false) ? TRUE : FALSE;
+    if (Verbose()) Log("test down: %s, composing %d", *eaten ? "kept" : "passed", composition_ ? 1 : 0);
     return S_OK;
 }
 
@@ -316,18 +323,29 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext *context, WPARAM wParam, LPARAM l
     asked_.valid = false; // the key is done with: the next press asks again
     if (!taken) return S_OK;
     HandleKey(context, wParam, lParam, "key", eaten);
-    // Kept, so it can't reach the app any more unless sent again.
+    // Kept, so it can't reach the app any more unless sent again; its up is kept as well.
     *eaten = TRUE;
+    keptDown_[wParam & 0xFF] = !replayed_.Is(wParam, 0);
     return S_OK;
 }
 
 STDMETHODIMP TextService::OnTestKeyUp(ITfContext *, WPARAM wParam, LPARAM lParam, BOOL *eaten) {
+    if (keptDown_[wParam & 0xFF]) {
+        *eaten = TRUE;
+        return S_OK;
+    }
     *eaten = Takes(wParam, false) && HostTakes(wParam, lParam, true) ? TRUE : FALSE;
     return S_OK;
 }
 
 STDMETHODIMP TextService::OnKeyUp(ITfContext *context, WPARAM wParam, LPARAM lParam, BOOL *eaten) {
     *eaten = FALSE;
+    if (keptDown_[wParam & 0xFF]) {
+        keptDown_[wParam & 0xFF] = false;
+        *eaten = TRUE;
+        if (Verbose()) Log("up kept, composing %d", composition_ ? 1 : 0);
+        return S_OK;
+    }
     if (!Takes(wParam, false)) return S_OK;
     bool taken = HostTakes(wParam, lParam, true);
     asked_.valid = false;
@@ -386,7 +404,7 @@ void TextService::HandleKey(ITfContext *context, WPARAM wParam, LPARAM lParam, c
     // Nothing reached the host (it went away, or no edit session): the app gets the key after all.
     if (FAILED(hr) || !sent) replay = name == "key";
     if (replay) Replay(wParam, lParam);
-    if (std::getenv("ARASO_LOG")) {
+    if (Verbose()) {
         Log("%s: %s%s, composing %d", name.c_str(), handled ? "handled" : "passed", replay ? ", sent again" : "",
             composition_ ? 1 : 0);
     }
@@ -657,7 +675,10 @@ void TextService::ApplyOps(TfEditCookie cookie, ITfContext *context, const Json 
         std::wstring text = Wide(op["text"].asString());
         const Json &replace = op["replace"];
         // A composition left in another field is finished there first.
-        if (composition_ && compositionContext_ != context) EndComposition(cookie);
+        if (composition_ && compositionContext_ != context) {
+            if (Verbose()) Log("composition in another context: ended");
+            EndComposition(cookie);
+        }
 
         ITfRange *target = nullptr;
         if (replace.isArray() && replace.size() == 2) {
@@ -677,10 +698,14 @@ void TextService::ApplyOps(TfEditCookie cookie, ITfContext *context, const Json 
             if (!composition_) {
                 ITfContextComposition *compose = nullptr;
                 if (SUCCEEDED(context->QueryInterface(IID_ITfContextComposition, reinterpret_cast<void **>(&compose)))) {
-                    if (SUCCEEDED(compose->StartComposition(cookie, target, static_cast<ITfCompositionSink *>(this),
-                                                            &composition_)) && composition_) {
+                    HRESULT started = compose->StartComposition(cookie, target, static_cast<ITfCompositionSink *>(this),
+                                                                &composition_);
+                    if (SUCCEEDED(started) && composition_) {
                         compositionContext_ = context;
                         compositionContext_->AddRef();
+                        if (Verbose()) Log("composition started");
+                    } else {
+                        Log("no composition (0x%08lx)", static_cast<unsigned long>(started));
                     }
                     compose->Release();
                 }

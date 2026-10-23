@@ -77,14 +77,32 @@ function Send-Keys([string]$keys) {
     }
 }
 
-function Case([string]$keys, [string]$expected, [scriptblock]$after) {
-    $notepad = Start-Process notepad -PassThru
+# A field to type into: Notepad (its Edit control, through IMM32's compatibility layer) or a WPF
+# TextBox (TSF's own). Answers what reads its text back.
+function Open-Field([string]$kind) {
+    if ($kind -eq "wpf") {
+        $out = Join-Path $env:TEMP "araso-wpf.txt"
+        Remove-Item $out -ErrorAction SilentlyContinue
+        $process = Start-Process powershell -ArgumentList "-STA", "-NoProfile", "-File", "$PSScriptRoot\wpf-field.ps1", $out -PassThru
+        for ($i = 0; $i -lt 40 -and $process.MainWindowHandle -eq [IntPtr]::Zero; $i++) { Start-Sleep -Milliseconds 250; $process.Refresh() }
+        return @{ process = $process; window = $process.MainWindowHandle; read = { if (Test-Path $out) { [IO.File]::ReadAllText($out) } else { "" } }.GetNewClosure() }
+    }
+    $process = Start-Process notepad -PassThru
     Start-Sleep -Seconds 3
-    $window = $notepad.MainWindowHandle
-    [Keys]::SetForegroundWindow($window) | Out-Null
-    Start-Sleep -Milliseconds 500
+    $window = $process.MainWindowHandle
     $edit = [Keys]::FindWindowEx($window, [IntPtr]::Zero, "Edit", $null)
-    if ($edit -eq [IntPtr]::Zero) { $edit = [Keys]::FindWindowEx($window, [IntPtr]::Zero, "RichEditD2DPT", $null) }
+    $class = "Edit"
+    if ($edit -eq [IntPtr]::Zero) { $edit = [Keys]::FindWindowEx($window, [IntPtr]::Zero, "RichEditD2DPT", $null); $class = "RichEditD2DPT" }
+    Write-Host "notepad's field: $class"
+    return @{ process = $process; window = $window; read = { [Keys]::Text($edit) }.GetNewClosure() }
+}
+
+function Case([string]$keys, [string]$expected, [scriptblock]$after, [string]$kind = "notepad") {
+    $field = Open-Field $kind
+    $notepad = $field.process
+    $window = $field.window
+    [Keys]::SetForegroundWindow($window) | Out-Null
+    Start-Sleep -Milliseconds 800
     $thread = [Keys]::GetWindowThreadProcessId($window, [IntPtr]::Zero)
     $layout = "{0:X8}" -f [Keys]::GetKeyboardLayout($thread).ToInt64()
     if (-not $layout.EndsWith("0412")) {
@@ -94,13 +112,13 @@ function Case([string]$keys, [string]$expected, [scriptblock]$after) {
         $layout = "{0:X8}" -f [Keys]::GetKeyboardLayout($thread).ToInt64()
     }
     $loaded = (Get-Process -Id $notepad.Id).Modules | Where-Object { $_.ModuleName -eq "ArasoTip.dll" }
-    Write-Host "notepad: layout $layout, ArasoTip.dll $(if ($loaded) { 'loaded' } else { 'not loaded' })"
+    Write-Host "${kind}: layout $layout, ArasoTip.dll $(if ($loaded) { 'loaded' } else { 'not loaded' })"
     Send-Keys $keys
     if ($after) { & $after }
     Start-Sleep -Milliseconds 800
-    $text = [Keys]::Text($edit)
+    $text = & $field.read
     Stop-Process -Id $notepad.Id -Force
-    Write-Host "typed '$keys' → '$text'"
+    Write-Host "$kind typed '$keys' → '$text'"
     return $text -eq $expected
 }
 
@@ -110,6 +128,7 @@ function Tap([int]$scan) {
 }
 
 $results = @(
+    (Case "dkssud hello " "안녕 hello " $null "wpf"),
     (Case "dkssud hello " "안녕 hello " $null),
     (Case "gksrmf " "한글 " $null),
     # Right Alt tapped alone switches the word just committed (0x38 extended: right Alt).

@@ -93,6 +93,9 @@ private:
     Seen seen_;
     /// A key sent again for the app (`Replay`): it passes when it comes back.
     Seen replayed_;
+    /// Keys whose down this text service kept: their up is kept too, as an input method's is
+    /// (an app shown a key going up for a key it never saw go down may end the composition).
+    bool keptDown_[256] = {};
 
     bool Takes(WPARAM wParam, bool down) const;
     bool HostTakes(WPARAM wParam, LPARAM lParam, bool up);
