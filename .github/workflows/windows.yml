@@ -1,14 +1,24 @@
 # The Windows input method (docs/windows-port.md): the Swift core and its tests on Windows, the
 # C++ text service and host with MSVC for every architecture, then everything staged together,
-# self-tested and packed into Araso-Setup.exe (an artifact; a release uploads it). The C++ is also
-# cross-compiled with zig on Linux, as windows/scripts/check-cross.sh does on a Mac.
+# self-tested and packed into Araso-Setup.exe (an artifact). The C++ is also cross-compiled with zig
+# on Linux, as windows/scripts/check-cross.sh does on a Mac.
+#
+# On a v<version> tag the installer goes into the draft release that release.yml makes, as
+# Araso-Setup.exe and Araso-Setup-<version>.exe (the updater asks for the first).
+# Signing, when these are set (unsigned otherwise: the updater then opens the release page):
+#   secrets WINDOWS_SIGN_PFX (base64 of a .pfx), WINDOWS_SIGN_PASSWORD
+#   variable ARASO_WINDOWS_PUBLISHER: the certificate's subject name, which the updater requires
 name: Windows
 
 on:
   push:
     branches: [main, 'aimdevlee/windows-*']
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 concurrency:
   group: windows-${{ github.ref }}
@@ -67,7 +77,7 @@ jobs:
           $version = [regex]::Match($plist, '<key>CFBundleShortVersionString</key>\s*<string>([^<]+)</string>').Groups[1].Value
           "ARASO_VERSION=$version" >> $env:GITHUB_ENV
       - name: Configure
-        run: cmake -S windows -B build/windows -A ${{ matrix.arch }} -DARASO_VERSION=${{ env.ARASO_VERSION }} -DARASO_HOST=${{ matrix.arch == 'Win32' && 'OFF' || 'ON' }}
+        run: cmake -S windows -B build/windows -A ${{ matrix.arch }} -DARASO_VERSION=${{ env.ARASO_VERSION }} -DARASO_HOST=${{ matrix.arch == 'Win32' && 'OFF' || 'ON' }} "-DARASO_PUBLISHER=${{ vars.ARASO_WINDOWS_PUBLISHER }}"
       - name: Build
         run: cmake --build build/windows --config Release
       - uses: actions/upload-artifact@v4
@@ -100,6 +110,19 @@ jobs:
             Copy-Item "$env:WINDIR\System32\$dll" $stage
           }
           Get-ChildItem -Recurse $stage | Select-Object -First 80 FullName
+      - name: Sign the binaries
+        if: env.SIGN_PFX != ''
+        env:
+          SIGN_PFX: ${{ secrets.WINDOWS_SIGN_PFX }}
+          SIGN_PASSWORD: ${{ secrets.WINDOWS_SIGN_PASSWORD }}
+        shell: pwsh
+        run: |
+          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\sign.pfx", [Convert]::FromBase64String($env:SIGN_PFX))
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe | Where-Object { $_.FullName -match 'x64' } | Select-Object -Last 1
+          $files = 'ArasoHost.exe', 'ArasoTip.dll', 'x86\ArasoTip.dll', 'arm64\ArasoTip.dll', 'ArasoBridge.dll' | ForEach-Object { "build\stage\$_" }
+          & $signtool.FullName sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 /f "$env:RUNNER_TEMP\sign.pfx" /p $env:SIGN_PASSWORD $files
+          if ($LASTEXITCODE -ne 0) { throw "signing failed" }
+          "SIGNTOOL=$($signtool.FullName)" >> $env:GITHUB_ENV
       - name: Self-test
         shell: pwsh
         run: |
@@ -114,10 +137,34 @@ jobs:
           if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; }
           & $iscc "/DStage=$PWD\build\stage" "/DVersion=$version" /O"$PWD\build" windows\installer\Araso.iss
           if ($LASTEXITCODE -ne 0) { throw "iscc failed" }
+          "ARASO_VERSION=$version" >> $env:GITHUB_ENV
+      - name: Sign the installer
+        if: env.SIGNTOOL != ''
+        env:
+          SIGN_PASSWORD: ${{ secrets.WINDOWS_SIGN_PASSWORD }}
+        shell: pwsh
+        run: |
+          & $env:SIGNTOOL sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 /f "$env:RUNNER_TEMP\sign.pfx" /p $env:SIGN_PASSWORD build\Araso-Setup.exe
+          if ($LASTEXITCODE -ne 0) { throw "signing failed" }
       - uses: actions/upload-artifact@v4
         with:
           name: Araso-Setup
           path: build/Araso-Setup.exe
+      - name: Into the draft release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          # release.yml makes the draft on the same tag; wait for it.
+          for ($i = 0; $i -lt 60; $i++) {
+            gh release view $tag --repo ${{ github.repository }} *> $null
+            if ($LASTEXITCODE -eq 0) { break }
+            Start-Sleep -Seconds 30
+          }
+          Copy-Item build/Araso-Setup.exe "build/Araso-Setup-$env:ARASO_VERSION.exe"
+          gh release upload $tag build/Araso-Setup.exe "build/Araso-Setup-$env:ARASO_VERSION.exe" --clobber --repo ${{ github.repository }}
 
   cross:
     runs-on: ubuntu-latest

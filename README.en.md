@@ -106,6 +106,28 @@ pkg, not both.
 
 </details>
 
+<details>
+<summary>Windows (preview)</summary>
+
+The same input method on Windows 10 (1809) or later. Deciding words, the dictionary and learning are
+the same code as on macOS; kanji conversion is AzooKey's.
+
+1. Download `Araso-Setup.exe` from the release and install it. It registers Araso and adds it to
+   Korean's input methods.
+2. Pick **Araso** in the taskbar's input indicator. Its menu is the macOS input menu.
+
+Where it differs from macOS:
+
+- Ctrl plays ⌘'s part: right Ctrl (the 한자 key) tapped alone pauses, and right Alt (the 한/영
+  key) tapped alone switches readings.
+- Apps are named by program (`notepad.exe`), and the settings files are in `%APPDATA%\Araso`.
+- Text replacements come from `replacements.json` in that folder (`{"addr": ["123 Main St"]}`),
+  and Araso replaces them itself.
+
+The rest is mapped in [docs/windows-port.md](docs/windows-port.md).
+
+</details>
+
 ### Updates
 
 When a new version is out, the input menu shows **Update to Araso …**, and **About** in the
