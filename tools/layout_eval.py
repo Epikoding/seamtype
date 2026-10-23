@@ -1,10 +1,10 @@
 """Rewrites eval.tsv for another layout. On another English layout Korean rows are typed on the
 same keys, so their keys become that layout's letters; English and Japanese rows are the same
-letters on any layout. Run eval3.py on the output with ARASO_LAYOUT set. For 3-set final
-(sebeolsikFinal) Korean rows are typed again from their reading; run it with
-ARASO_KOREAN_LAYOUT=sebeolsikFinal (docs/keyboard-layouts.md).
+letters on any layout. Run eval3.py on the output with ARASO_LAYOUT set. For 3-set final and 390
+(sebeolsikFinal, sebeolsik390) Korean rows are typed again from their reading; run it with
+ARASO_KOREAN_LAYOUT set to the same (docs/keyboard-layouts.md).
 
-usage: python3 layout_eval.py colemak|colemakDH|sebeolsikFinal < eval.tsv > eval-colemak.tsv
+usage: python3 layout_eval.py colemak|colemakDH|sebeolsikFinal|sebeolsik390 < eval.tsv > eval-colemak.tsv
 """
 import sys
 
@@ -35,27 +35,33 @@ JONG = ["", "x", "!", "V", "s", "E", "S", "A", "w", "@", "F", "D", "T", "%", "$"
         "a", "#", "Z", "C", "W", "Q", "1"]
 
 
-def sebeolsik(hangul):
-    """3-set final keys for a Hangul string, or None for anything but complete syllables."""
+# 세벌식 390: ㅒ on ⇧R, and fewer finals of their own (ㄵ is ㄴ then ㅈ).
+JUNG_390 = [j.replace("G", "R") for j in JUNG]
+JONG_390 = ["", "x", "F", "xq", "s", "s!", "S", "A", "w", "D", "C", "w3", "wq", "wW", "wQ", "V", "z", "3", "X", "q",
+            "2", "a", "!", "Z", "E", "W", "Q", "1"]
+
+
+def sebeolsik(hangul, jung=JUNG, jong=JONG):
+    """3-set keys for a Hangul string, or None for anything but complete syllables."""
     keys = []
     for ch in hangul:
         i = ord(ch) - 0xAC00
         if not 0 <= i < 11172:
             return None
-        keys.append(CHO[i // 588] + JUNG[i % 588 // 28] + JONG[i % 28])
+        keys.append(CHO[i // 588] + jung[i % 588 // 28] + jong[i % 28])
     return "".join(keys)
 
 
 def main():
-    if sys.argv[1] == "sebeolsikFinal":
-        t, three = {}, True
+    if sys.argv[1] in ("sebeolsikFinal", "sebeolsik390"):
+        t, three = {}, sys.argv[1]
     else:
         t, three = table(LAYOUTS[sys.argv[1]]), False
     for line in sys.stdin:
         keys, prev, label, reading = line.rstrip("\n").split("\t")
         if label == "korean":
             if three:
-                keys = sebeolsik(reading)
+                keys = sebeolsik(reading) if three == "sebeolsikFinal" else sebeolsik(reading, JUNG_390, JONG_390)
                 if keys is None:
                     continue
             else:

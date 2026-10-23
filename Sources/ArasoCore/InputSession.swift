@@ -363,7 +363,7 @@ public final class InputSession {
         // On 3-set a key with a digit or symbol there (⇧B ?, ⇧/ !, ⇧L 3, [ () types it right after
         // a Korean word and after the symbols that follow one; anywhere else it is QWERTY's (Bob),
         // also after Hangul with stray jamo (kgb, 그ㅜ), which isn't a word.
-        if let typed = key.character, let symbol = SebeolsikFinal.symbol(for: typed), KoreanLayout.current == .sebeolsikFinal,
+        if let typed = key.character, let symbol = Sebeolsik.symbol(for: typed), KoreanLayout.current.isSebeolsik,
            !inURLRun, keys.isEmpty ? inKoreanSymbols
                : heldBoundary.map { $0 != " " && currentLanguage() == .korean } ?? (currentLanguage() == .korean && readsAsKoreanWord()) {
             if heldBoundary != nil { commit(client: client) } // the held word and its symbol go in, then this one
@@ -407,7 +407,7 @@ public final class InputSession {
             if heldBoundary != nil { commit(client: client) } // the held word goes in with its boundary; a new word starts
             // A symbol on its own is confirmed by the next word, which is judged by itself.
             if !keys.isEmpty, keys.allSatisfy({ RomajiComposer.symbols[$0] != nil }),
-               !(KoreanLayout.current == .sebeolsikFinal && keys.allSatisfy({ SebeolsikFinal.jamo(for: $0) != nil })) {
+               !(KoreanLayout.current.isSebeolsik && keys.allSatisfy({ Sebeolsik.jamo(for: $0) != nil })) {
                 commit(client: client) // (3-set's ; is ㅂ, a word on its way)
             }
             if keys.isEmpty { // a new word
@@ -550,7 +550,7 @@ public final class InputSession {
                     if forced == nil { pinned = language }
                     heldBoundary = ch
                     updatePreview(client)
-                    afterKoreanSymbol = KoreanLayout.current == .sebeolsikFinal && language.sentenceLanguage == .korean
+                    afterKoreanSymbol = KoreanLayout.current.isSebeolsik && language.sentenceLanguage == .korean
                         && ch != " " && !inURLRun
                     return true
                 }
@@ -568,7 +568,7 @@ public final class InputSession {
                                    language: word.language, text: word.text + String(ch), boundary: String(ch),
                                    location: location, previous: previous, learns: !inURLRun)
             noteRun(word.text + String(ch))
-            afterKoreanSymbol = KoreanLayout.current == .sebeolsikFinal && word.language.sentenceLanguage == .korean
+            afterKoreanSymbol = KoreanLayout.current.isSebeolsik && word.language.sentenceLanguage == .korean
                 && ch != " " && !inURLRun
             return false
 
@@ -1235,7 +1235,7 @@ public final class InputSession {
             return decision
         }
         // 3-set's 0 is ㅋ: after Korean, 0000 is ㅋㅋㅋㅋ (a number to the engine, which a switch key gives).
-        if KoreanLayout.current == .sebeolsikFinal, previousLanguage == .korean, startsAfterHangul, SebeolsikFinal.isLaughter(keys) {
+        if KoreanLayout.current.isSebeolsik, previousLanguage == .korean, startsAfterHangul, Sebeolsik.isLaughter(keys) {
             keptEnglishByStrict = false
             let decision = Decision(language: .korean, confidence: SplittingEngine.confidence,
                                     output: HangulComposer.compose(keys: keys)?.text ?? keys, explanation: "ㅋ on 3-set's 0 after Korean")

@@ -595,6 +595,7 @@ private struct GeneralPane: View {
                                                            set: { model.set(\.koreanLayout, $0) })) {
                         Text(L("2-set")).tag(KoreanLayout.dubeolsik)
                         Text(L("3-set final")).tag(KoreanLayout.sebeolsikFinal)
+                        Text(L("3-set 390")).tag(KoreanLayout.sebeolsik390)
                     }
                     .labelsHidden()
                     .fixedSize()

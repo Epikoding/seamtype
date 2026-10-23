@@ -9,7 +9,7 @@ import Foundation
 //   araso-cli --decide < keys_prev.tsv              heuristic verdict for "keys<TAB>previous" lines
 //   araso-cli --type [--japanese] < keys.txt        "keys<TAB>text" after typing keys + Space into a session
 // ARASO_LAYOUT=colemak (or colemakDH): keys are that layout's letters, as settings.json's latinLayout.
-// ARASO_KOREAN_LAYOUT=sebeolsikFinal: Korean is read as 3-set, as settings.json's koreanLayout.
+// ARASO_KOREAN_LAYOUT=sebeolsikFinal or sebeolsik390: Korean is read as 3-set, as settings.json's koreanLayout.
 // ARASO_JAPANESE_LAYOUT=qwerty (or colemak, colemakDH): romaji's own layout, as japaneseLayout.
 
 var args = Array(CommandLine.arguments.dropFirst())

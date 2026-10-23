@@ -55,8 +55,8 @@ import Testing
 
     /// Typing through a session, digits and symbols arriving as the app's printable keys; ⎋ in
     /// `text` is a switch key.
-    static func type(_ text: String) -> String {
-        KoreanLayout.$override.withValue(.sebeolsikFinal) {
+    static func type(_ text: String, on layout: KoreanLayout = .sebeolsikFinal) -> String {
+        KoreanLayout.$override.withValue(layout) {
             let field = FakeTextField()
             let store = FileManager.default.temporaryDirectory.appendingPathComponent("araso-3set-\(UUID().uuidString).json")
             let engine = DictionaryEngine(base: SplittingEngine(base: sharedEngine, english: sharedEngine.english), storeURL: store)
@@ -118,6 +118,23 @@ import Testing
         #expect(Self.type("lfw 1,000 ") == "잘 1,000 ")
         #expect(Self.type("lfw 10:00 ") == "잘 10:00 ")
         #expect(Self.type("lfw 100 ") == "잘 100 ")
+    }
+
+    /// 390: the same jamo but fewer finals of their own (ㄵ is ㄴ then ㅈ on ⇧1), QWERTY's symbols
+    /// on the unshifted keys and its digits as a keypad.
+    @Test func sebeolsik390() {
+        func type(_ text: String) -> String { Self.type(text, on: .sebeolsik390) }
+        #expect(type("jfs!jf ") == "앉아 ")              // ㄴ + ㅈ
+        #expect(type("ufDjgs ") == "닭은 ")              // ⇧D is ㄺ
+        #expect(type("kfXjd ") == "값이 ")
+        #expect(type("htxqjd ") == "넋이 ")              // ㄱ + ㅅ, where 최종 has ⇧V
+        #expect(type("mfqngjvf3 ") == "핫스왑 ")
+        #expect(type("jfsheamfncj4B ") == "안녕하세요! ")   // ⇧B is !
+        #expect(type("lfw ldhr2jt? ") == "잘 지냈어? ")     // ? is QWERTY's
+        #expect(type("lcM ") == "제1 ")                  // ⇧M is 1
+        #expect(type("lfw 0000 ") == "잘 ㅋㅋㅋㅋ ")
+        #expect(type("hello[B] ") == "hello[B] ")
+        #expect(type("ldhr2jtB⎋") == "ldhr2jtB")
     }
 
     @Test func deleteTakesBackTheLastJamo() {
