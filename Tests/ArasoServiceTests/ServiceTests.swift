@@ -162,7 +162,7 @@ final class Harness {
         h.type("dkssud")
         #expect(h.document.text == "안녕")
         #expect(h.document.composition == NSRange(location: 0, length: 2))
-        #expect(h.ui?.composing == true)
+        #expect(h.ui == nil) // nothing to draw: the text service needn't say where the word is
         h.press(Keys.enter)
         #expect(h.document.text == "안녕")
         #expect(h.document.composition == nil)
@@ -285,6 +285,15 @@ final class Harness {
         #expect(AppPolicies.load().policy(for: "notepad.exe").conversionThreshold == AppPolicy.strictThreshold)
         // Korean UI text, from the Mac app's Localizable.strings.
         #expect(menu.contains { $0.title.contains("일시정지") })
+    }
+
+    @Test func readingsForTheDictionaryEditor() throws {
+        let h = try Harness()
+        var request = ServiceRequest(op: .readings)
+        request.keys = "dkssud"
+        let choices = h.runtime.handle(request).choices ?? []
+        #expect(choices.first == Choice(language: "english", text: "dkssud"))
+        #expect(choices.contains(Choice(language: "korean", text: "안녕")))
     }
 
     @Test func menuOpensTheSettingsWindow() throws {

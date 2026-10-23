@@ -41,6 +41,8 @@ public struct ServiceRequest: Codable, Sendable {
         case release
         /// What the dictionary decided for some keys, with scores (the Dictionary pane's preview).
         case decide
+        /// The readings some keys can be added to the dictionary as (`keys`), for the Dictionary pane.
+        case readings
     }
 
     public var op: Op
@@ -232,6 +234,12 @@ public struct UIState: Codable, Equatable, Sendable {
     public var openSettings: String?
 
     public init() {}
+
+    /// Nothing to draw or do: the text service then doesn't say where things are.
+    public var isEmpty: Bool {
+        candidates == nil && readings == nil && learned == nil && paused == nil && trace == nil
+            && settingsChanged == nil && openSettings == nil
+    }
 }
 
 /// `InputSession.Trace`, for the Try Typing pane.
@@ -253,6 +261,8 @@ public struct ServiceResponse: Codable, Equatable, Sendable {
     public var settings: SettingsModel?
     public var release: ReleaseInfo?
     public var decision: TraceInfo?
+    /// For `readings`: each reading the keys can go in as, in the switch key's order.
+    public var choices: [Choice]?
     public var error: String?
     /// Clients with edits waiting (`pending`): the host tells their text services to ask.
     public var notify: [Int]?
@@ -261,6 +271,12 @@ public struct ServiceResponse: Codable, Equatable, Sendable {
         self.reply = reply
         self.ui = ui
     }
+}
+
+/// A reading some keys can be written as.
+public struct Choice: Codable, Equatable, Sendable {
+    public var language: String
+    public var text: String
 }
 
 extension Language {

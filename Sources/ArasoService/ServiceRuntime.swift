@@ -168,6 +168,11 @@ public final class ServiceRuntime {
                                               confidence: decision.confidence, output: decision.output,
                                               explanation: decision.explanation, partial: false)
             }
+        case .readings:
+            response = ServiceResponse()
+            let keys = request.keys ?? ""
+            let languages: [Language] = keys.isEmpty ? [] : Language.english.cycle(for: keys, japanese: settings.japanese)
+            response.choices = languages.map { Choice(language: $0.rawValue, text: UserDictionary.reading(keys, as: $0)) }
         case .vim:
             response = ServiceResponse()
             guard let signal = request.vim.flatMap(VimSignal.init(rawValue:)) else { break }
@@ -249,7 +254,7 @@ public final class ServiceRuntime {
         reply.ops = request.op == .terminated ? [] : field.ops
         reply.converting = session.conversion != nil
         fill(&ui, client: client, session: session, field: field)
-        return ServiceResponse(reply: reply, ui: ui)
+        return ServiceResponse(reply: reply, ui: ui.isEmpty ? nil : ui)
     }
 
     /// This client's session, rebuilt (after committing what was being typed) when a setting changed.
