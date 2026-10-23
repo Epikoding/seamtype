@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include "TextService.h"
 
 #include "DisplayAttributes.h"
@@ -195,7 +196,9 @@ STDMETHODIMP TextService::Deactivate() {
 
 // MARK: Focus
 
-STDMETHODIMP TextService::OnSetFocus(ITfDocumentMgr *focus, ITfDocumentMgr *) {
+STDMETHODIMP TextService::OnSetFocus(ITfDocumentMgr *focus, ITfDocumentMgr *previous) {
+    if (focus == previous) return S_OK; // the same field again
+    Log("focus moved in %s (%s)", Utf8(app_).c_str(), composition_ ? "while composing" : "idle");
     // What was being typed in the last field goes in there, as shown.
     if (composition_ && compositionContext_) CommitIn(compositionContext_, "blur");
     if (!focus) return S_OK;
@@ -240,8 +243,8 @@ ITfContext *TextService::FocusedContext() {
 
 // MARK: Keys
 
-/// Whether the key may go to the host. Modifiers go too (their taps switch and pause), and the
-/// session decides the rest: a key it doesn't take still reaches the app (`OnKeyDown`).
+/// Whether the key may go to the host at all. Modifiers do (their taps switch and pause); the
+/// host decides the rest (`HostTakes`).
 bool TextService::Takes(WPARAM vk, bool down) const {
     if (!threadMgr_) return false;
     if (vk == VK_CAPITAL || vk == VK_NUMLOCK || vk == VK_SCROLL || vk == VK_PROCESSKEY || vk == VK_PACKET) return false;
@@ -250,55 +253,101 @@ bool TextService::Takes(WPARAM vk, bool down) const {
     return true;
 }
 
-/// A key with Ctrl, Alt or the Windows key (not a modifier itself): an app's shortcut unless the
-/// host says the session takes it, so the app's accelerators see it untouched.
-bool TextService::IsShortcut(WPARAM vk) const {
-    if (IsModifier(vk)) return false;
-    return GetKeyState(VK_CONTROL) < 0 || GetKeyState(VK_MENU) < 0 || GetKeyState(VK_LWIN) < 0 || GetKeyState(VK_RWIN) < 0;
-}
-
-/// Asked once per key: OnTestKeyDown may come more than once for one key (a peek, then the real
+/// Whether this text service keeps the key from the app, as the host answers (`test`). TSF holds
+/// it to the answer: a key kept goes nowhere else, and one not kept never reaches OnKeyDown. So it
+/// is asked once per key: OnTestKeyDown may come more than once for one key (a peek, then the real
 /// thing) and OnKeyDown follows it; they all get the first answer.
-bool TextService::HostTakes(WPARAM wParam, LPARAM lParam) {
-    DWORD now = GetTickCount();
-    if (asked_.valid && asked_.vk == wParam && asked_.lParam == lParam && now - asked_.at < 1000) return asked_.taken;
+bool TextService::HostTakes(WPARAM wParam, LPARAM lParam, bool up) {
+    if (asked_.Is(wParam, lParam)) return asked_.taken;
     Json request = Json::object();
     request.set("op", "test");
     request.set("key", KeyJson(wParam, lParam));
+    if (up) request.set("up", true);
     Json response;
     bool taken = host_.Request(request, response, 200) && response["reply"]["handled"].asBool();
-    asked_ = {true, wParam, lParam, now, taken};
+    asked_ = {true, wParam, lParam, GetTickCount(), taken};
     return taken;
 }
 
-STDMETHODIMP TextService::OnTestKeyDown(ITfContext *, WPARAM wParam, LPARAM lParam, BOOL *eaten) {
-    *eaten = Takes(wParam, true) && (!IsShortcut(wParam) || HostTakes(wParam, lParam));
+/// A modifier went down: the host hears of it (a tap starts; Ctrl puts a held word in), and the
+/// app gets it as well. Once per press: neither a second test nor the key repeating counts.
+void TextService::SeeModifier(ITfContext *context, WPARAM wParam, LPARAM lParam) {
+    if (!context || seen_.Is(wParam, lParam) || (lParam & (1 << 30))) return;
+    seen_ = {true, wParam, lParam, GetTickCount(), true};
+    Json key = KeyJson(wParam, lParam);
+    context->AddRef();
+    HRESULT hr = Edit(context, false, [this, context, key](TfEditCookie cookie) {
+        bool masked = false;
+        Json request = Json::object();
+        request.set("op", "key");
+        request.set("key", key);
+        request.set("context", Snapshot(cookie, context, masked));
+        bool handled = false;
+        Exchange(cookie, context, request, handled);
+        context->Release();
+        return S_OK;
+    });
+    if (FAILED(hr)) context->Release();
+}
+
+STDMETHODIMP TextService::OnTestKeyDown(ITfContext *context, WPARAM wParam, LPARAM lParam, BOOL *eaten) {
+    *eaten = FALSE;
+    if (!Takes(wParam, true) || replayed_.Is(wParam, 0)) return S_OK;
+    if (IsModifier(wParam)) {
+        SeeModifier(context, wParam, lParam);
+        return S_OK;
+    }
+    *eaten = HostTakes(wParam, lParam, false) ? TRUE : FALSE;
     return S_OK;
 }
 
 STDMETHODIMP TextService::OnKeyDown(ITfContext *context, WPARAM wParam, LPARAM lParam, BOOL *eaten) {
     *eaten = FALSE;
     if (!Takes(wParam, true)) return S_OK;
-    bool shortcut = IsShortcut(wParam);
-    bool taken = !shortcut || HostTakes(wParam, lParam);
+    if (replayed_.Is(wParam, 0)) {
+        replayed_.valid = false; // the app's now
+        return S_OK;
+    }
+    if (IsModifier(wParam)) {
+        SeeModifier(context, wParam, lParam); // an app that didn't test the key first
+        return S_OK;
+    }
+    bool taken = HostTakes(wParam, lParam, false);
     asked_.valid = false; // the key is done with: the next press asks again
     if (!taken) return S_OK;
-    // A modifier held down repeats: only its first press counts.
-    if (IsModifier(wParam) && (lParam & (1 << 30))) return S_OK;
     HandleKey(context, wParam, lParam, "key", eaten);
+    // Kept, so it can't reach the app any more unless sent again.
+    *eaten = TRUE;
     return S_OK;
 }
 
-STDMETHODIMP TextService::OnTestKeyUp(ITfContext *, WPARAM wParam, LPARAM, BOOL *eaten) {
-    *eaten = Takes(wParam, false);
+STDMETHODIMP TextService::OnTestKeyUp(ITfContext *, WPARAM wParam, LPARAM lParam, BOOL *eaten) {
+    *eaten = Takes(wParam, false) && HostTakes(wParam, lParam, true) ? TRUE : FALSE;
     return S_OK;
 }
 
 STDMETHODIMP TextService::OnKeyUp(ITfContext *context, WPARAM wParam, LPARAM lParam, BOOL *eaten) {
     *eaten = FALSE;
     if (!Takes(wParam, false)) return S_OK;
+    bool taken = HostTakes(wParam, lParam, true);
+    asked_.valid = false;
+    if (!taken) return S_OK;
     HandleKey(context, wParam, lParam, "keyUp", eaten);
+    *eaten = TRUE;
     return S_OK;
+}
+
+/// A kept key the session passed on and the host couldn't type (Return, Tab, a shortcut ending a
+/// word): sent again, after the word went in, and let through when it comes back.
+void TextService::Replay(WPARAM wParam, LPARAM lParam) {
+    INPUT input = {};
+    input.type = INPUT_KEYBOARD;
+    input.ki.wVk = static_cast<WORD>(wParam);
+    input.ki.wScan = static_cast<WORD>((lParam >> 16) & 0xFF);
+    input.ki.dwFlags = ((lParam >> 24) & 1) ? KEYEVENTF_EXTENDEDKEY : 0;
+    // The key comes back with a repeat count of 1 and no previous state: match it by key only.
+    replayed_ = {true, wParam, 0, GetTickCount(), true};
+    SendInput(1, &input, sizeof input);
 }
 
 Json TextService::KeyJson(WPARAM wParam, LPARAM lParam) const {
@@ -314,32 +363,42 @@ Json TextService::KeyJson(WPARAM wParam, LPARAM lParam) const {
     return key;
 }
 
+/// A kept key (`HostTakes`), in a synchronous edit session. A password field's keys go in as typed
+/// (the host sees `masked` and types them), as when paused (MaskedField on macOS).
 void TextService::HandleKey(ITfContext *context, WPARAM wParam, LPARAM lParam, const char *op, BOOL *eaten) {
     Json key = KeyJson(wParam, lParam);
     std::string name = op;
     bool handled = false;
+    bool replay = false;
+    bool sent = false;
     HRESULT hr = Edit(context, true, [&](TfEditCookie cookie) {
         bool masked = false;
         Json request = Json::object();
         request.set("op", name);
         request.set("key", key);
+        request.set("claimed", true);
         request.set("context", Snapshot(cookie, context, masked));
-        // A password field: the keys go to the app as typed, as when paused (MaskedField on macOS).
-        if (masked) return S_OK;
-        Json rects = Rects(cookie, context);
-        request.set("rects", rects);
-        Exchange(cookie, context, request, handled);
+        request.set("rects", Rects(cookie, context));
+        sent = Exchange(cookie, context, request, handled, &replay);
         return S_OK;
     });
     if (FAILED(hr)) Log("no edit session for a key (0x%08lx)", static_cast<unsigned long>(hr));
-    *eaten = handled ? TRUE : FALSE;
+    // Nothing reached the host (it went away, or no edit session): the app gets the key after all.
+    if (FAILED(hr) || !sent) replay = name == "key";
+    if (replay) Replay(wParam, lParam);
+    if (std::getenv("ARASO_LOG")) {
+        Log("%s: %s%s, composing %d", name.c_str(), handled ? "handled" : "passed", replay ? ", sent again" : "",
+            composition_ ? 1 : 0);
+    }
+    *eaten = handled || replay ? TRUE : FALSE;
 }
 
-bool TextService::Exchange(TfEditCookie cookie, ITfContext *context, Json request, bool &handled) {
+bool TextService::Exchange(TfEditCookie cookie, ITfContext *context, Json request, bool &handled, bool *replay) {
     Json response;
     if (!host_.Request(request, response)) return false;
     const Json &reply = response["reply"];
     handled = reply["handled"].asBool();
+    if (replay) *replay = reply["replay"].asBool();
     ApplyOps(cookie, context, reply["ops"], reply["converting"].asBool());
     // How Try Typing's word was decided: for the settings window, which is in this process (the host
     // only says so to the text service in its own exe), handed over without waiting on anything.
@@ -698,6 +757,7 @@ void TextService::ClearAttributes(TfEditCookie cookie, ITfContext *context, ITfR
 STDMETHODIMP TextService::OnCompositionTerminated(TfEditCookie cookie, ITfComposition *composition) {
     // The app ended it (a click elsewhere): the text stays as it is, and the session starts afresh.
     if (composition_ && composition == composition_) {
+        Log("the app ended the composition in %s", Utf8(app_).c_str());
         ITfRange *range = nullptr;
         if (compositionContext_ && SUCCEEDED(composition_->GetRange(&range)) && range) {
             ClearAttributes(cookie, compositionContext_, range);

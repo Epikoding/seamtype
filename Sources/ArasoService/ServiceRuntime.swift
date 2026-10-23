@@ -245,20 +245,34 @@ public final class ServiceRuntime {
             session.commitForNewContext(client: field)
         case .key:
             guard let key = request.key else { break }
-            reply.handled = handleKey(key, client: client, session: session, field: field, ui: &ui)
+            // A password field: the keys go in as typed, as when paused (MaskedField on macOS).
+            if request.context?.masked != true {
+                reply.handled = handleKey(key, client: client, session: session, field: field, ui: &ui)
+            }
+            if !reply.handled, request.claimed == true, KeyMapper.modifier(key) == nil {
+                // Kept from the app, so it can't type it: typed here, after the word, or sent again.
+                if let text = KeyMapper.typed(key, policy: session.policy) {
+                    field.insertText(text, replacing: nil)
+                    reply.handled = true
+                } else {
+                    reply.replay = true
+                }
+            }
         case .test:
             guard let key = request.key else { break }
-            reply.handled = takes(key, session: session)
+            reply.handled = request.up == true ? tapActs(key, client: client, session: session)
+                                               : takes(key, client: client, session: session)
         case .keyUp:
             guard let key = request.key, let modifier = KeyMapper.modifier(key) else { break }
             switch client.taps.up(modifier, pauseKey: settings.pauseKey) {
             case .pause?:
                 togglePause(session, field, ui: &ui)
+                reply.handled = true
             case .cycle?:
                 guard !session.inVimNormalMode else { break } // vim's own keys
                 _ = session.handle(.cycle, client: field)
                 // A lone Alt going up opens the app's menu bar: taken, so the app doesn't see it.
-                reply.handled = modifier == .rightAlt
+                reply.handled = true
             case nil:
                 break
             }
@@ -348,16 +362,46 @@ public final class ServiceRuntime {
         return handled
     }
 
-    /// Whether a key with Ctrl, Alt or Win is the session's; one that isn't goes to the app, and
-    /// the session is told of it (a shortcut ends what it knew of the field: the run, the word just
-    /// committed). Asked more than once for one key, it answers the same.
-    private func takes(_ key: WindowsKey, session: InputSession) -> Bool {
-        if KeyMapper.modifier(key) != nil { return true }
+    /// Whether the text service keeps a key from the app (`test`). Letters, digits, Space and
+    /// symbols are kept unless keys pass straight through (paused, vim's normal mode); any other key
+    /// only when the session has a word to finish or a switch to make. A key that isn't kept goes to
+    /// the app untouched (a shortcut's accelerator sees it) and the session only hears of it, as on
+    /// macOS. Asked more than once for one key, it answers the same.
+    private func takes(_ key: WindowsKey, client: Client, session: InputSession) -> Bool {
+        if KeyMapper.modifier(key) != nil || KeyMapper.isLock(key) { return false }
+        client.taps.otherKey() // a modifier held with it is a shortcut, kept or not
+        if key.vk == KeyMapper.vkHangul {
+            return session.policy.switchKeys.contains(.rightOption) && !session.inVimNormalMode
+        }
+        if key.vk == KeyMapper.vkHanja { return settings.pauseKey == .tap(.rightCommand) }
         if case .shortcut(let shortcut) = settings.pauseKey, let code = KeyMapper.macKeyCode(key),
            shortcut.matches(keyCode: code, modifiers: KeyMapper.modifiers(key)) { return true }
         let sessionKey = KeyMapper.sessionKey(key, policy: session.policy)
-        if sessionKey == .cycle || !session.keys.isEmpty || session.conversion != nil { return true }
-        _ = session.handle(sessionKey, client: SnapshotClient.detached())
+        if sessionKey == .cycle { return true }
+        if session.paused || session.inVimNormalMode { return false }
+        switch sessionKey {
+        case .letter, .printable, .shiftSpace:
+            return true
+        case .escape where session.policy.switchKeys.contains(.escape):
+            return true // it may switch the word just committed
+        default:
+            if !session.keys.isEmpty || session.conversion != nil { return true }
+            _ = session.handle(sessionKey, client: SnapshotClient.detached())
+            return false
+        }
+    }
+
+    /// Whether a modifier going up ends a tap that does something (`test` with `up`): then the text
+    /// service keeps it and sends `keyUp`. One that doesn't is done with here, since it won't come.
+    private func tapActs(_ key: WindowsKey, client: Client, session: InputSession) -> Bool {
+        guard let modifier = KeyMapper.modifier(key) else { return false }
+        var taps = client.taps
+        switch taps.up(modifier, pauseKey: settings.pauseKey) {
+        case .pause?: return true
+        case .cycle? where !session.inVimNormalMode: return true
+        default: break
+        }
+        client.taps = taps
         return false
     }
 

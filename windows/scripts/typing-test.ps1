@@ -117,7 +117,7 @@ $results = @(
     # Right Ctrl tapped alone pauses (0x1D extended): keys then go in as typed.
     (Case "" "dkssud " { Tap 0x1D; Send-Keys "dkssud " })
 )
-if (Test-Path $log) { Write-Host "--- araso.log"; Get-Content $log | Select-Object -Last 60 | Out-Host }
+if (Test-Path $log) { Write-Host "--- araso.log"; Get-Content $log | Select-Object -Last 150 | Out-Host }
 reg query "HKCU\Software\Microsoft\CTF\TIP" /s 2>$null | Select-String -Pattern "6D6C7D5F" | Out-Host
 reg query "HKLM\Software\Microsoft\CTF\TIP\{6D6C7D5F-3B7F-4F0E-9A2C-417261736F01}" /s 2>$null | Select-Object -First 20 | Out-Host
 Get-WinUserLanguageList | Format-List | Out-Host

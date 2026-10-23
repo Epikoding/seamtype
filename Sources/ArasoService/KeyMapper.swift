@@ -133,6 +133,16 @@ public enum KeyMapper {
         return .printable(ch)
     }
 
+    /// What a key the session passed on types, for the host to put in where the app can't (the
+    /// text service kept the key from it); nil for one that types nothing (Return, Tab, a shortcut).
+    public static func typed(_ key: WindowsKey, policy: AppPolicy) -> String? {
+        switch sessionKey(key, policy: policy) {
+        case .letter(let ch), .printable(let ch): return String(ch)
+        case .shiftSpace: return " "
+        default: return nil
+        }
+    }
+
     /// What the key types on a US keyboard (no letters: those come from the layout), or nil.
     static func character(_ key: WindowsKey) -> Character? {
         if (vkNumpad0...(vkNumpad0 + 9)).contains(key.vk) {

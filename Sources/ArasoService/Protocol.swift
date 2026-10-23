@@ -17,9 +17,11 @@ public struct ServiceRequest: Codable, Sendable {
         case terminated
         /// A key went down (`key`).
         case key
-        /// A key with Ctrl, Alt or the Windows key, before it goes anywhere: whether the session takes
-        /// it (the pause shortcut, a switch key, a word in progress to finish first). If not, the app
-        /// gets it untouched (its accelerators work) and the session only hears of it, as on macOS.
+        /// A key before it goes anywhere (`OnTestKeyDown`): whether the text service keeps it from the
+        /// app. TSF holds it to that answer: a key kept goes nowhere else, so one the session then
+        /// passes on is typed by the host (`claimed`) or sent again (`replay`). Not kept: the app gets
+        /// it untouched (a shortcut's accelerator, keys while paused) and the session only hears of it.
+        /// With `up`, a modifier going up: whether it ends a tap that does something.
         case test
         /// A key went up: only modifiers matter (taps).
         case keyUp
@@ -65,6 +67,10 @@ public struct ServiceRequest: Codable, Sendable {
     public var change: SettingsChange?
     public var body: String?
     public var keys: String?
+    /// `key`: the text service kept the key from the app (`test` said so), so it can't go there.
+    public var claimed: Bool?
+    /// `test`: the key is going up.
+    public var up: Bool?
 
     public init(op: Op, client: Int? = nil, app: String? = nil, key: WindowsKey? = nil, context: TextContext? = nil) {
         self.op = op
@@ -171,6 +177,9 @@ public struct ServiceReply: Codable, Equatable, Sendable {
     /// Whether a Japanese phrase is being converted: the text service draws the composition as
     /// converted text.
     public var converting: Bool?
+    /// A kept key the session passed on and the host can't type (Return, Tab, a shortcut): the
+    /// text service sends it again, for the app.
+    public var replay: Bool?
 
     public init(handled: Bool = false, ops: [EditOp] = []) {
         self.handled = handled
