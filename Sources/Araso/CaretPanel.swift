@@ -276,7 +276,7 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
 }
 
 /// A correction the dictionary just took (`InputSession.learned`), as a pill where the conversion
-/// candidates and the switch key's list show, its icon under the word's first letter: one shape,
+/// candidates and the switch key's list show, from the same corner as the list it follows: one shape,
 /// told apart by icon and word, the icon in the accent color: a pencil and "Once" after the first
 /// correction, a check and "Remembered" once learned for good, and in gray an arrow back and
 /// "Forgotten" when a switch back to Araso's own reading forgot the word. The icon pops up first
@@ -321,12 +321,19 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
         }
         view.setAccessibilityLabel(spoken)
 
+        // Where the list goes, from the same corner: under the word, or above it near the bottom
+        // of the screen.
+        var origin = CaretPanel.origin(for: size, caret: word, gap: gap - margin, centered: false)
+        origin.x -= margin
+        let above = origin.y > word.minY
+
         // The pill's paper, border and shadow; inside it a clip that the word unfolds in. Both
-        // keep their left edge, the word's side, as they widen.
+        // keep their left edge, the word's side, as they widen, and it pops up from the corner
+        // nearest the word.
         let pill = CALayer()
-        pill.anchorPoint = CGPoint(x: 0, y: 0.5)
+        pill.anchorPoint = CGPoint(x: 0, y: above ? 0 : 1)
         pill.bounds = CGRect(x: 0, y: 0, width: full, height: height)
-        pill.position = CGPoint(x: margin, y: margin + height / 2)
+        pill.position = CGPoint(x: margin, y: above ? margin : margin + height)
         pill.cornerRadius = 5
         pill.cornerCurve = .continuous
         pill.borderWidth = 1
@@ -367,9 +374,6 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
         view.layer?.addSublayer(pill)
         panel.contentView = view
 
-        // The icon under the word's first letter, as a candidate's text is.
-        var origin = CaretPanel.origin(for: size, caret: word, gap: gap - margin, centered: false)
-        origin.x -= margin + padding
         panel.setFrame(NSRect(origin: origin, size: size), display: true)
         panel.alphaValue = 1
         panel.orderFrontRegardless()
