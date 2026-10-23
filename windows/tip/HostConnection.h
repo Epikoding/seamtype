@@ -20,7 +20,7 @@ public:
 
     /// Sends `request` with this client's id; the answer, or false when the host can't be reached
     /// (after one reconnect: a host that restarted gives new client ids).
-    bool Request(Json request, Json &response, DWORD timeoutMs = 400);
+    bool Request(Json request, Json &response, DWORD timeoutMs = 1500);
 
     int client() const { return client_; }
 

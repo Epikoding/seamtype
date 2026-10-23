@@ -5,6 +5,11 @@
 # Takes over the keyboard and the focus: run it on a machine nobody is using (the CI's).
 param([string]$Installer = "build/Araso-Setup.exe")
 $ErrorActionPreference = "Stop"
+# The text service and the host log here too (machine-wide, so Notepad and the host both see it).
+$log = Join-Path $env:TEMP "araso.log"
+[Environment]::SetEnvironmentVariable("ARASO_LOG", $log, "Machine")
+[Environment]::SetEnvironmentVariable("ARASO_LOG", $log, "User")
+$env:ARASO_LOG = $log
 
 Add-Type @"
 using System;
@@ -20,6 +25,9 @@ public static class Keys {
     [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr w, IntPtr l);
     [DllImport("input.dll", CharSet = CharSet.Unicode)] public static extern bool InstallLayoutOrTip(string profile, uint flags);
     [DllImport("input.dll", CharSet = CharSet.Unicode)] public static extern bool SetDefaultLayoutOrTip(string profile, uint flags);
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, IntPtr process);
+    [DllImport("user32.dll")] public static extern IntPtr GetKeyboardLayout(uint thread);
+    [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr window, uint message, IntPtr w, IntPtr l);
     const uint SCANCODE = 0x8, KEYUP = 0x2, EXTENDED = 0x1;
     public static void Key(ushort scan, bool up, bool extended) {
         var input = new INPUT[1];
@@ -37,19 +45,23 @@ public static class Keys {
 }
 "@
 
-$profile = "0412:{6D6C7D5F-3B7F-4F0E-9A2C-417261736F01}{6D6C7D5F-3B7F-4F0E-9A2C-417261736F02}"
+$script:language = "0412"
+$tip = "0412:{6D6C7D5F-3B7F-4F0E-9A2C-417261736F01}{6D6C7D5F-3B7F-4F0E-9A2C-417261736F02}"
 # Only the installer is waited for: -Wait would also wait for the host it starts, which stays.
-$installer = Start-Process -FilePath $Installer -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -PassThru
-$installer.WaitForExit()
-if ($installer.ExitCode -ne 0) { throw "install failed ($($installer.ExitCode))" }
+# (Not $installer: PowerShell's names ignore case, and the [string] parameter would take the process.)
+$setup = Start-Process -FilePath $Installer -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -PassThru
+$setup.WaitForExit()
+if ($setup.ExitCode -ne 0) { throw "install failed ($($setup.ExitCode))" }
 Write-Host "installed"
 $folder = "$env:ProgramFiles\Araso"
 if (-not (Test-Path "$folder\ArasoTip.dll")) { throw "not installed in $folder" }
-[Keys]::InstallLayoutOrTip($profile, 0) | Out-Null
-if (-not [Keys]::SetDefaultLayoutOrTip($profile, 0)) { Write-Host "SetDefaultLayoutOrTip failed" }
-if (-not (Get-Process ArasoHost -ErrorAction SilentlyContinue)) {
-    Start-Process -FilePath "$folder\ArasoHost.exe" -ArgumentList "--server"
-}
+[Keys]::InstallLayoutOrTip($tip, 0) | Out-Null
+if (-not [Keys]::SetDefaultLayoutOrTip($tip, 0)) { Write-Host "SetDefaultLayoutOrTip failed" }
+# A new window starts in the default input method only when it overrides the language list's first.
+Set-WinDefaultInputMethodOverride -InputTip $tip
+# A host started by the installer doesn't have ARASO_LOG: start it afresh.
+Get-Process ArasoHost -ErrorAction SilentlyContinue | Stop-Process -Force
+Start-Process -FilePath "$folder\ArasoHost.exe" -ArgumentList "--server"
 Start-Sleep -Seconds 8   # the host warms its models up
 
 # Letters' scan codes on a US keyboard.
@@ -58,7 +70,7 @@ $rows = @(@("qwertyuiop", 0x10), @("asdfghjkl", 0x1E), @("zxcvbnm", 0x2C))
 foreach ($row in $rows) { for ($i = 0; $i -lt $row[0].Length; $i++) { $scans[[string]$row[0][$i]] = $row[1] + $i } }
 $scans[" "] = 0x39
 
-function Type([string]$keys) {
+function Send-Keys([string]$keys) {
     foreach ($ch in $keys.ToCharArray()) {
         $scan = $scans[[string]$ch]
         [Keys]::Key($scan, $false, $false); Start-Sleep -Milliseconds 40
@@ -66,20 +78,50 @@ function Type([string]$keys) {
     }
 }
 
-function Case([string]$keys, [string]$expected, [scriptblock]$after) {
-    $notepad = Start-Process notepad -PassThru
+# A field to type into: Notepad (its Edit control, through IMM32's compatibility layer) or a WPF
+# TextBox (TSF's own). Answers what reads its text back.
+function Open-Field([string]$kind) {
+    if ($kind -eq "wpf") {
+        $out = Join-Path $env:TEMP "araso-wpf.txt"
+        Remove-Item $out -ErrorAction SilentlyContinue
+        $process = Start-Process powershell -ArgumentList "-STA", "-NoProfile", "-File", "$PSScriptRoot\wpf-field.ps1", $out -PassThru
+        for ($i = 0; $i -lt 60 -and $process.MainWindowHandle -eq [IntPtr]::Zero; $i++) { Start-Sleep -Milliseconds 250; $process.Refresh() }
+        Start-Sleep -Seconds 2 # WPF draws, then focuses the box
+        return @{ process = $process; window = $process.MainWindowHandle; read = { if (Test-Path $out) { [IO.File]::ReadAllText($out) } else { "" } }.GetNewClosure() }
+    }
+    $process = Start-Process notepad -PassThru
     Start-Sleep -Seconds 3
-    $window = $notepad.MainWindowHandle
-    [Keys]::SetForegroundWindow($window) | Out-Null
-    Start-Sleep -Milliseconds 500
+    $window = $process.MainWindowHandle
     $edit = [Keys]::FindWindowEx($window, [IntPtr]::Zero, "Edit", $null)
-    if ($edit -eq [IntPtr]::Zero) { $edit = [Keys]::FindWindowEx($window, [IntPtr]::Zero, "RichEditD2DPT", $null) }
-    Type $keys
+    $class = "Edit"
+    if ($edit -eq [IntPtr]::Zero) { $edit = [Keys]::FindWindowEx($window, [IntPtr]::Zero, "RichEditD2DPT", $null); $class = "RichEditD2DPT" }
+    Write-Host "notepad's field: $class"
+    return @{ process = $process; window = $window; read = { [Keys]::Text($edit) }.GetNewClosure() }
+}
+
+function Case([string]$keys, [string]$expected, [scriptblock]$after, [string]$kind = "notepad") {
+    $field = Open-Field $kind
+    $notepad = $field.process
+    $window = $field.window
+    [Keys]::SetForegroundWindow($window) | Out-Null
+    Start-Sleep -Milliseconds 800
+    $thread = [Keys]::GetWindowThreadProcessId($window, [IntPtr]::Zero)
+    $layout = "{0:X8}" -f [Keys]::GetKeyboardLayout($thread).ToInt64()
+    for ($i = 0; $i -lt 5 -and -not $layout.EndsWith($script:language); $i++) {
+        # As the taskbar's indicator does: ask the window to switch to the language Araso is listed under.
+        $hkl = [IntPtr][Convert]::ToInt64($script:language + $script:language, 16)
+        [Keys]::PostMessage($window, 0x50 <# WM_INPUTLANGCHANGEREQUEST #>, [IntPtr]::Zero, $hkl) | Out-Null
+        Start-Sleep -Milliseconds 800
+        $layout = "{0:X8}" -f [Keys]::GetKeyboardLayout($thread).ToInt64()
+    }
+    $loaded = (Get-Process -Id $notepad.Id).Modules | Where-Object { $_.ModuleName -eq "ArasoTip.dll" }
+    Write-Host "${kind}: layout $layout, ArasoTip.dll $(if ($loaded) { 'loaded' } else { 'not loaded' })"
+    Send-Keys $keys
     if ($after) { & $after }
     Start-Sleep -Milliseconds 800
-    $text = [Keys]::Text($edit)
+    $text = & $field.read
     Stop-Process -Id $notepad.Id -Force
-    Write-Host "typed '$keys' → '$text'"
+    Write-Host "$kind typed '$keys' → '$text'"
     return $text -eq $expected
 }
 
@@ -89,13 +131,26 @@ function Tap([int]$scan) {
 }
 
 $results = @(
+    # A WPF TextBox: a TSF text store, where the word is composed in the text.
+    (Case "dkssud hello " "안녕 hello " $null "wpf"),
+    # Right Alt tapped alone switches the word just committed (0x38 extended: right Alt).
+    (Case "hello " "ㅗ디ㅣㅐ " { Tap 0x38 } "wpf"),
+    # Notepad's Edit control: a classic app, where the word is drawn at the caret and goes in whole.
     (Case "dkssud hello " "안녕 hello " $null),
     (Case "gksrmf " "한글 " $null),
-    # Right Alt tapped alone switches the word just committed (0x38 extended: right Alt).
-    (Case "hello " "ㅗ디ㅣㅐ " { Tap 0x38 }),
+    # Switched while typing, before the Space.
+    (Case "hello" "ㅗ디ㅣㅐ " { Tap 0x38; Send-Keys " " }),
     # Right Ctrl tapped alone pauses (0x1D extended): keys then go in as typed.
-    (Case "" "dkssud " { Tap 0x1D; Type "dkssud " })
+    (Case "" "dkssud " { Tap 0x1D; Send-Keys "dkssud " })
 )
+# Reported, not required: switching the word just committed in a classic app, whose text Araso
+# edits only through Windows' compatibility layer.
+Case "hello " "ㅗ디ㅣㅐ " { Tap 0x38 } | Out-Null
+
+if (Test-Path $log) { Write-Host "--- araso.log"; Get-Content $log | Select-String -NotMatch "test down|up kept" | Select-Object -Last 200 | Out-Host }
+reg query "HKCU\Software\Microsoft\CTF\TIP" /s 2>$null | Select-String -Pattern "6D6C7D5F" | Out-Host
+reg query "HKLM\Software\Microsoft\CTF\TIP\{6D6C7D5F-3B7F-4F0E-9A2C-417261736F01}" /s 2>$null | Select-Object -First 20 | Out-Host
+Get-WinUserLanguageList | Format-List | Out-Host
 if ($results -contains $false) {
     Get-ChildItem "$env:APPDATA\Araso" -ErrorAction SilentlyContinue | Select-Object Name | Out-Host
     throw "typing test failed"

@@ -138,13 +138,30 @@ final class Harness {
         send(ServiceRequest(op: .keyUp, client: client, key: key)).reply.handled
     }
 
-    /// Types `s`; keys the input method passes on are typed by the app.
+    /// Types `s` as the text service does: `test` first; a key not kept is typed by the app, and a
+    /// kept one comes `claimed`, so the host types it if the session passes it on (or has it sent
+    /// again, for the app).
     func type(_ s: String) {
-        for ch in s where !press(Keys.key(ch)) { document.appTypes(String(ch)) }
+        for ch in s {
+            let key = Keys.key(ch)
+            guard send(ServiceRequest(op: .test, client: client, key: key)).reply.handled else {
+                document.appTypes(String(ch))
+                continue
+            }
+            var request = ServiceRequest(op: .key, client: client, key: key)
+            request.claimed = true
+            let reply = send(request).reply
+            #expect(reply.handled || reply.replay == true, "a kept key went nowhere")
+            if reply.replay == true { document.appTypes(String(ch)) }
+        }
     }
 
+    /// A modifier tapped: its down only seen, its up kept when `test` says it does something.
     func tap(_ down: WindowsKey, _ up: WindowsKey) -> Bool {
         press(down)
+        var test = ServiceRequest(op: .test, client: client, key: up)
+        test.up = true
+        guard send(test).reply.handled else { return false }
         return release(up)
     }
 }
@@ -229,7 +246,7 @@ final class Harness {
 
     @Test func rightCtrlTapPausesTheField() throws {
         let h = try Harness()
-        #expect(!h.tap(Keys.rightCtrl, Keys.rightCtrlUp) || true)
+        #expect(h.tap(Keys.rightCtrl, Keys.rightCtrlUp))
         #expect(h.ui?.paused == true)
         h.type("dkssud")
         #expect(h.document.text == "dkssud")
@@ -237,6 +254,43 @@ final class Harness {
         #expect(h.ui?.paused == false)
         h.type(" dkssud")
         #expect(h.document.text == "dkssud 안녕")
+    }
+
+    /// TSF holds a text service to what `OnTestKeyDown` said: a key kept from the app goes nowhere
+    /// else. So a kept key the session passes on is typed by the host or sent again, and keys the
+    /// session doesn't want aren't kept.
+    @Test func keptKeysAreTypedOrSentAgain() throws {
+        let h = try Harness()
+        func test(_ key: WindowsKey) -> Bool { h.send(ServiceRequest(op: .test, client: h.client, key: key)).reply.handled }
+        func claimed(_ key: WindowsKey) -> ServiceReply {
+            var request = ServiceRequest(op: .key, client: h.client, key: key)
+            request.claimed = true
+            return h.send(request).reply
+        }
+        // Space after a word: the word goes in and the host types the space after it.
+        h.type("dkssud")
+        #expect(test(Keys.key(" ")))
+        #expect(claimed(Keys.key(" ")).handled)
+        #expect(h.document.text == "안녕 ")
+        // Return or a shortcut ending a word: the word goes in and the key goes back to the app.
+        let ret = WindowsKey(vk: 0x0D, scan: 0x1C)
+        #expect(!test(ret)) // nothing to finish: the app's
+        h.type("gks")
+        #expect(test(ret))
+        let reply = claimed(ret)
+        #expect(reply.handled || reply.replay == true)
+        h.type("dkssud")
+        let ctrlS = WindowsKey(vk: 0x53, scan: 0x1F, ctrl: true)
+        #expect(test(ctrlS))
+        #expect(claimed(ctrlS).replay == true)
+        // A modifier going down is only seen; its up is kept only when it ends a tap that acts.
+        var leftCtrlUp = WindowsKey(vk: KeyMapper.vkControl, scan: 0x1D)
+        leftCtrlUp.ctrl = false
+        #expect(!h.tap(Keys.leftCtrl, leftCtrlUp))
+        // Paused: keys aren't kept at all, so the app types them itself.
+        #expect(h.tap(Keys.rightCtrl, Keys.rightCtrlUp))
+        #expect(!test(Keys.key("d")))
+        #expect(!test(Keys.key(" ")))
     }
 
     @Test func hanjaKeyPausesAsItGoesDown() throws {

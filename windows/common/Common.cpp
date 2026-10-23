@@ -124,6 +124,18 @@ void Log(const char *format, ...) {
     std::vsnprintf(buffer + prefix, sizeof buffer - static_cast<size_t>(prefix), format, args);
     va_end(args);
     OutputDebugStringA(buffer);
+    // ARASO_LOG names a file to append to as well (the CI's typing test reads it).
+    wchar_t path[MAX_PATH] = L"";
+    if (GetEnvironmentVariableW(L"ARASO_LOG", path, MAX_PATH)) {
+        HANDLE file = CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS, 0, nullptr);
+        if (file != INVALID_HANDLE_VALUE) {
+            char line[600];
+            int length = std::snprintf(line, sizeof line, "[%lu %lu] %s\r\n", GetCurrentProcessId(), GetTickCount(), buffer);
+            DWORD written = 0;
+            WriteFile(file, line, static_cast<DWORD>(length), &written, nullptr);
+            CloseHandle(file);
+        }
+    }
 }
 
 }  // namespace araso

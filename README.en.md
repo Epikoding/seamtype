@@ -123,6 +123,9 @@ Where it differs from macOS:
 - Apps are named by program (`notepad.exe`), and the settings files are in `%APPDATA%\Araso`.
 - Text replacements come from `replacements.json` in that folder (`{"addr": ["123 Main St"]}`),
   and Araso replaces them itself.
+- In older apps (Windows 10's Notepad, for one), the word being typed is shown underlined in a
+  small window at the caret and goes in whole when it ends: such apps don't let a Korean input
+  method compose a whole word.
 
 The rest is mapped in [docs/windows-port.md](docs/windows-port.md).
 

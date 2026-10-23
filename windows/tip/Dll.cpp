@@ -1,4 +1,5 @@
 // The COM server: the class factory, and registration as a Korean keyboard text service.
+#include <cstdlib>
 #include "TextService.h"
 #include "resource.h"
 

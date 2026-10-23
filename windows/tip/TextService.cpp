@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include "TextService.h"
 
 #include "DisplayAttributes.h"
@@ -17,6 +18,12 @@ constexpr LONG kLookBehind = 256;
 UINT PendingMessage() {
     static UINT message = RegisterWindowMessageW(kPendingMessage);
     return message;
+}
+
+/// The key-by-key log for the typing test (`ARASO_LOG`): what happened, never which key or what text.
+bool Verbose() {
+    static const bool verbose = std::getenv("ARASO_LOG") != nullptr;
+    return verbose;
 }
 
 bool IsModifier(WPARAM vk) {
@@ -160,6 +167,7 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr *threadMgr, TfClientId clientI
 
 STDMETHODIMP TextService::Deactivate() {
     if (composition_ && compositionContext_) CommitIn(compositionContext_, "blur");
+    else if (!floating_.empty() && floatingContext_) CommitIn(floatingContext_, "blur");
     host_.Detach();
     if (button_) {
         ITfLangBarItemMgr *items = nullptr;
@@ -187,6 +195,7 @@ STDMETHODIMP TextService::Deactivate() {
     }
     SafeRelease(composition_);
     SafeRelease(compositionContext_);
+    ClearFloating();
     DestroyMessageWindow();
     SafeRelease(threadMgr_);
     clientId_ = TF_CLIENTID_NULL;
@@ -195,9 +204,12 @@ STDMETHODIMP TextService::Deactivate() {
 
 // MARK: Focus
 
-STDMETHODIMP TextService::OnSetFocus(ITfDocumentMgr *focus, ITfDocumentMgr *) {
+STDMETHODIMP TextService::OnSetFocus(ITfDocumentMgr *focus, ITfDocumentMgr *previous) {
+    if (focus == previous) return S_OK; // the same field again
+    Log("focus moved in %s (%s)", Utf8(app_).c_str(), composition_ ? "while composing" : "idle");
     // What was being typed in the last field goes in there, as shown.
     if (composition_ && compositionContext_) CommitIn(compositionContext_, "blur");
+    else if (!floating_.empty() && floatingContext_) CommitIn(floatingContext_, "blur");
     if (!focus) return S_OK;
     Json request = Json::object();
     request.set("op", "focus");
@@ -222,6 +234,7 @@ void TextService::CommitIn(ITfContext *context, const char *op) {
         if (!Exchange(cookie, context, request, handled)) EndComposition(cookie);
         // Whatever the host did, nothing stays composed in a field that lost the focus.
         if (composition_) EndComposition(cookie);
+        if (floatingContext_ == context) ClearFloating();
         context->Release();
         return S_OK;
     });
@@ -240,8 +253,8 @@ ITfContext *TextService::FocusedContext() {
 
 // MARK: Keys
 
-/// Whether the key may go to the host. Modifiers go too (their taps switch and pause), and the
-/// session decides the rest: a key it doesn't take still reaches the app (`OnKeyDown`).
+/// Whether the key may go to the host at all. Modifiers do (their taps switch and pause); the
+/// host decides the rest (`HostTakes`).
 bool TextService::Takes(WPARAM vk, bool down) const {
     if (!threadMgr_) return false;
     if (vk == VK_CAPITAL || vk == VK_NUMLOCK || vk == VK_SCROLL || vk == VK_PROCESSKEY || vk == VK_PACKET) return false;
@@ -250,61 +263,127 @@ bool TextService::Takes(WPARAM vk, bool down) const {
     return true;
 }
 
-/// A key with Ctrl, Alt or the Windows key (not a modifier itself): an app's shortcut unless the
-/// host says the session takes it, so the app's accelerators see it untouched.
-bool TextService::IsShortcut(WPARAM vk) const {
-    if (IsModifier(vk)) return false;
-    return GetKeyState(VK_CONTROL) < 0 || GetKeyState(VK_MENU) < 0 || GetKeyState(VK_LWIN) < 0 || GetKeyState(VK_RWIN) < 0;
-}
-
-/// Asked once per key: OnTestKeyDown may come more than once for one key (a peek, then the real
+/// Whether this text service keeps the key from the app, as the host answers (`test`). TSF holds
+/// it to the answer: a key kept goes nowhere else, and one not kept never reaches OnKeyDown. So it
+/// is asked once per key: OnTestKeyDown may come more than once for one key (a peek, then the real
 /// thing) and OnKeyDown follows it; they all get the first answer.
-bool TextService::HostTakes(WPARAM wParam, LPARAM lParam) {
-    DWORD now = GetTickCount();
-    if (asked_.valid && asked_.vk == wParam && asked_.lParam == lParam && now - asked_.at < 1000) return asked_.taken;
+bool TextService::HostTakes(WPARAM wParam, LPARAM lParam, bool up) {
+    if (asked_.Is(wParam, lParam)) return asked_.taken;
     Json request = Json::object();
     request.set("op", "test");
     request.set("key", KeyJson(wParam, lParam));
+    if (up) request.set("up", true);
     Json response;
-    bool taken = host_.Request(request, response, 200) && response["reply"]["handled"].asBool();
-    asked_ = {true, wParam, lParam, now, taken};
+    bool answered = host_.Request(request, response, 500);
+    bool taken = answered && response["reply"]["handled"].asBool();
+    if (Verbose() && !answered) Log("test: no answer from the host");
+    asked_ = {true, wParam, lParam, GetTickCount(), taken};
     return taken;
 }
 
-STDMETHODIMP TextService::OnTestKeyDown(ITfContext *, WPARAM wParam, LPARAM lParam, BOOL *eaten) {
-    *eaten = Takes(wParam, true) && (!IsShortcut(wParam) || HostTakes(wParam, lParam));
+/// A modifier went down: the host hears of it (a tap starts; Ctrl puts a held word in), and the
+/// app gets it as well. Once per press: neither a second test nor the key repeating counts.
+void TextService::SeeModifier(ITfContext *context, WPARAM wParam, LPARAM lParam) {
+    if (!context || seen_.Is(wParam, lParam) || (lParam & (1 << 30))) return;
+    seen_ = {true, wParam, lParam, GetTickCount(), true};
+    Json key = KeyJson(wParam, lParam);
+    context->AddRef();
+    HRESULT hr = Edit(context, false, [this, context, key](TfEditCookie cookie) {
+        bool masked = false;
+        Json request = Json::object();
+        request.set("op", "key");
+        request.set("key", key);
+        request.set("context", Snapshot(cookie, context, masked));
+        bool handled = false;
+        Exchange(cookie, context, request, handled);
+        context->Release();
+        return S_OK;
+    });
+    if (FAILED(hr)) context->Release();
+}
+
+STDMETHODIMP TextService::OnTestKeyDown(ITfContext *context, WPARAM wParam, LPARAM lParam, BOOL *eaten) {
+    *eaten = FALSE;
+    if (!Takes(wParam, true) || replayed_.Is(wParam, 0)) return S_OK;
+    if (IsModifier(wParam)) {
+        SeeModifier(context, wParam, lParam);
+        return S_OK;
+    }
+    *eaten = HostTakes(wParam, lParam, false) ? TRUE : FALSE;
+    if (Verbose()) Log("test down: %s, composing %d", *eaten ? "kept" : "passed", composition_ ? 1 : 0);
     return S_OK;
 }
 
 STDMETHODIMP TextService::OnKeyDown(ITfContext *context, WPARAM wParam, LPARAM lParam, BOOL *eaten) {
     *eaten = FALSE;
     if (!Takes(wParam, true)) return S_OK;
-    bool shortcut = IsShortcut(wParam);
-    bool taken = !shortcut || HostTakes(wParam, lParam);
+    if (replayed_.Is(wParam, 0)) {
+        replayed_.valid = false; // the app's now
+        return S_OK;
+    }
+    if (IsModifier(wParam)) {
+        SeeModifier(context, wParam, lParam); // an app that didn't test the key first
+        return S_OK;
+    }
+    bool taken = HostTakes(wParam, lParam, false);
     asked_.valid = false; // the key is done with: the next press asks again
     if (!taken) return S_OK;
-    // A modifier held down repeats: only its first press counts.
-    if (IsModifier(wParam) && (lParam & (1 << 30))) return S_OK;
     HandleKey(context, wParam, lParam, "key", eaten);
+    // Kept, so it can't reach the app any more unless sent again; its up is kept as well.
+    *eaten = TRUE;
+    keptDown_[wParam & 0xFF] = !replayed_.Is(wParam, 0);
     return S_OK;
 }
 
-STDMETHODIMP TextService::OnTestKeyUp(ITfContext *, WPARAM wParam, LPARAM, BOOL *eaten) {
-    *eaten = Takes(wParam, false);
+STDMETHODIMP TextService::OnTestKeyUp(ITfContext *, WPARAM wParam, LPARAM lParam, BOOL *eaten) {
+    if (keptDown_[wParam & 0xFF]) {
+        *eaten = TRUE;
+        return S_OK;
+    }
+    *eaten = Takes(wParam, false) && HostTakes(wParam, lParam, true) ? TRUE : FALSE;
     return S_OK;
 }
 
 STDMETHODIMP TextService::OnKeyUp(ITfContext *context, WPARAM wParam, LPARAM lParam, BOOL *eaten) {
     *eaten = FALSE;
+    if (keptDown_[wParam & 0xFF]) {
+        keptDown_[wParam & 0xFF] = false;
+        *eaten = TRUE;
+        if (Verbose()) Log("up kept, composing %d", composition_ ? 1 : 0);
+        return S_OK;
+    }
     if (!Takes(wParam, false)) return S_OK;
+    bool taken = HostTakes(wParam, lParam, true);
+    asked_.valid = false;
+    if (!taken) return S_OK;
     HandleKey(context, wParam, lParam, "keyUp", eaten);
+    *eaten = TRUE;
     return S_OK;
+}
+
+/// A kept key the session passed on and the host couldn't type (Return, Tab, a shortcut ending a
+/// word): sent again, after the word went in, and let through when it comes back.
+void TextService::Replay(WPARAM wParam, LPARAM lParam) {
+    INPUT input = {};
+    input.type = INPUT_KEYBOARD;
+    input.ki.wVk = static_cast<WORD>(wParam);
+    input.ki.wScan = static_cast<WORD>((lParam >> 16) & 0xFF);
+    input.ki.dwFlags = ((lParam >> 24) & 1) ? KEYEVENTF_EXTENDEDKEY : 0;
+    // The key comes back with a repeat count of 1 and no previous state: match it by key only.
+    replayed_ = {true, wParam, 0, GetTickCount(), true};
+    SendInput(1, &input, sizeof input);
 }
 
 Json TextService::KeyJson(WPARAM wParam, LPARAM lParam) const {
     Json key = Json::object();
     key.set("vk", static_cast<int>(wParam));
-    key.set("scan", static_cast<int>((lParam >> 16) & 0xFF));
+    int scan = static_cast<int>((lParam >> 16) & 0xFF);
+    if (scan == 0) {
+        // WPF hands TSF keys without their scan codes: the US keyboard's for the key.
+        scan = static_cast<int>(MapVirtualKeyW(static_cast<UINT>(wParam), MAPVK_VK_TO_VSC) & 0xFF);
+        if (Verbose()) Log("a key without its scan code");
+    }
+    key.set("scan", scan);
     key.set("extended", ((lParam >> 24) & 1) != 0);
     key.set("shift", GetKeyState(VK_SHIFT) < 0);
     key.set("ctrl", GetKeyState(VK_CONTROL) < 0);
@@ -314,32 +393,42 @@ Json TextService::KeyJson(WPARAM wParam, LPARAM lParam) const {
     return key;
 }
 
+/// A kept key (`HostTakes`), in a synchronous edit session. A password field's keys go in as typed
+/// (the host sees `masked` and types them), as when paused (MaskedField on macOS).
 void TextService::HandleKey(ITfContext *context, WPARAM wParam, LPARAM lParam, const char *op, BOOL *eaten) {
     Json key = KeyJson(wParam, lParam);
     std::string name = op;
     bool handled = false;
+    bool replay = false;
+    bool sent = false;
     HRESULT hr = Edit(context, true, [&](TfEditCookie cookie) {
         bool masked = false;
         Json request = Json::object();
         request.set("op", name);
         request.set("key", key);
+        request.set("claimed", true);
         request.set("context", Snapshot(cookie, context, masked));
-        // A password field: the keys go to the app as typed, as when paused (MaskedField on macOS).
-        if (masked) return S_OK;
-        Json rects = Rects(cookie, context);
-        request.set("rects", rects);
-        Exchange(cookie, context, request, handled);
+        request.set("rects", Rects(cookie, context));
+        sent = Exchange(cookie, context, request, handled, &replay);
         return S_OK;
     });
     if (FAILED(hr)) Log("no edit session for a key (0x%08lx)", static_cast<unsigned long>(hr));
-    *eaten = handled ? TRUE : FALSE;
+    // Nothing reached the host (it went away, or no edit session): the app gets the key after all.
+    if (FAILED(hr) || !sent) replay = name == "key";
+    if (replay) Replay(wParam, lParam);
+    if (Verbose()) {
+        Log("%s: %s%s, composing %d", name.c_str(), handled ? "handled" : "passed", replay ? ", sent again" : "",
+            composition_ ? 1 : 0);
+    }
+    *eaten = handled || replay ? TRUE : FALSE;
 }
 
-bool TextService::Exchange(TfEditCookie cookie, ITfContext *context, Json request, bool &handled) {
+bool TextService::Exchange(TfEditCookie cookie, ITfContext *context, Json request, bool &handled, bool *replay) {
     Json response;
     if (!host_.Request(request, response)) return false;
     const Json &reply = response["reply"];
     handled = reply["handled"].asBool();
+    if (replay) *replay = reply["replay"].asBool();
     ApplyOps(cookie, context, reply["ops"], reply["converting"].asBool());
     // How Try Typing's word was decided: for the settings window, which is in this process (the host
     // only says so to the text service in its own exe), handed over without waiting on anything.
@@ -360,11 +449,15 @@ bool TextService::Exchange(TfEditCookie cookie, ITfContext *context, Json reques
             }
         }
     }
-    // Where the word and the caret are now: the host places its windows there.
-    if (response["ui"].isObject()) {
+    // Where the word and the caret are now: the host places its windows there, and draws a word
+    // kept here (`floating_`) at the caret.
+    bool preview = !floating_.empty() && floatingContext_ == context;
+    if (response["ui"].isObject() || preview || previewShown_) {
         Json place = Json::object();
         place.set("op", "place");
         place.set("rects", Rects(cookie, context));
+        if (preview) place.set("preview", Utf8(floating_));
+        previewShown_ = preview;
         Json ignored;
         host_.Request(place, ignored, 200);
     }
@@ -505,6 +598,19 @@ Json TextService::Snapshot(TfEditCookie cookie, ITfContext *context, bool &maske
     anchor->Release();
     // Text with embedded objects reads shorter than its positions: then the positions don't line up.
     if (static_cast<LONG>(text.size()) != want) out.set("unreadable", true);
+    if (!floating_.empty() && floatingContext_ == context && selStart >= start) {
+        // The word kept here, as if composed at the caret.
+        text = text.substr(0, std::min(text.size(), static_cast<size_t>(selStart - start))) + floating_;
+        LONG length = static_cast<LONG>(floating_.size());
+        Json marked = Json::array();
+        marked.push(static_cast<int>(selStart));
+        marked.push(static_cast<int>(length));
+        out.set("marked", marked);
+        Json caret = Json::array();
+        caret.push(static_cast<int>(selStart + length));
+        caret.push(0);
+        out.set("selection", caret);
+    }
     out.set("text", Utf8(text));
     out.set("start", static_cast<int>(start));
     return out;
@@ -593,12 +699,20 @@ void TextService::EndComposition(TfEditCookie cookie) {
 /// The edits, in order: each replaces its range (else the composition, else the selection);
 /// `mark` leaves its text composed, `insert` puts it in for good.
 void TextService::ApplyOps(TfEditCookie cookie, ITfContext *context, const Json &ops, bool converting) {
+    bool floats = Floats(context);
     for (const Json &op : ops.items()) {
+        if (floats) {
+            ApplyFloating(cookie, context, op);
+            continue;
+        }
         bool mark = op["kind"].asString() == "mark";
         std::wstring text = Wide(op["text"].asString());
         const Json &replace = op["replace"];
         // A composition left in another field is finished there first.
-        if (composition_ && compositionContext_ != context) EndComposition(cookie);
+        if (composition_ && compositionContext_ != context) {
+            if (Verbose()) Log("composition in another context: ended");
+            EndComposition(cookie);
+        }
 
         ITfRange *target = nullptr;
         if (replace.isArray() && replace.size() == 2) {
@@ -618,10 +732,15 @@ void TextService::ApplyOps(TfEditCookie cookie, ITfContext *context, const Json 
             if (!composition_) {
                 ITfContextComposition *compose = nullptr;
                 if (SUCCEEDED(context->QueryInterface(IID_ITfContextComposition, reinterpret_cast<void **>(&compose)))) {
-                    if (SUCCEEDED(compose->StartComposition(cookie, target, static_cast<ITfCompositionSink *>(this),
-                                                            &composition_)) && composition_) {
+                    HRESULT started = compose->StartComposition(cookie, target, static_cast<ITfCompositionSink *>(this),
+                                                                &composition_);
+                    if (SUCCEEDED(started) && composition_) {
                         compositionContext_ = context;
                         compositionContext_->AddRef();
+                        compositionStartedAt_ = GetTickCount();
+                        if (Verbose()) Log("composition started");
+                    } else {
+                        Log("no composition (0x%08lx)", static_cast<unsigned long>(started));
                     }
                     compose->Release();
                 }
@@ -675,6 +794,96 @@ void TextService::ApplyOps(TfEditCookie cookie, ITfContext *context, const Json 
     }
 }
 
+// MARK: The word kept here
+
+/// Whether words are kept here rather than composed in the field: in a classic app's context
+/// (CUAS marks it transitory), or an app seen ending compositions at once.
+bool TextService::Floats(ITfContext *context) {
+    if (appEndsCompositions_) return true;
+    TF_STATUS status = {};
+    return SUCCEEDED(context->GetStatus(&status)) && (status.dwStaticFlags & TF_SS_TRANSITORY);
+}
+
+void TextService::ClearFloating() {
+    floating_.clear();
+    SafeRelease(floatingContext_);
+}
+
+void TextService::InsertAtCaret(TfEditCookie cookie, ITfContext *context, const std::wstring &text) {
+    if (text.empty()) return;
+    ITfInsertAtSelection *insert = nullptr;
+    if (FAILED(context->QueryInterface(IID_ITfInsertAtSelection, reinterpret_cast<void **>(&insert)))) return;
+    ITfRange *inserted = nullptr;
+    if (SUCCEEDED(insert->InsertTextAtSelection(cookie, 0, text.c_str(), static_cast<LONG>(text.size()), &inserted)) &&
+        inserted) {
+        MoveCaretToEnd(cookie, context, inserted);
+        inserted->Release();
+    }
+    insert->Release();
+}
+
+/// One edit where words are kept here: the field holds what went in, `floating_` the word at the
+/// caret. Positions are the session's, which sees the word as composed there (`Snapshot`).
+void TextService::ApplyFloating(TfEditCookie cookie, ITfContext *context, const Json &op) {
+    bool mark = op["kind"].asString() == "mark";
+    std::wstring text = Wide(op["text"].asString());
+    if (floatingContext_ != context) {
+        ClearFloating();
+        floatingContext_ = context;
+        floatingContext_->AddRef();
+    }
+    LONG caret = 0, selected = 0;
+    TF_SELECTION selection = {};
+    ULONG fetched = 0;
+    if (SUCCEEDED(context->GetSelection(cookie, TF_DEFAULT_SELECTION, 1, &selection, &fetched)) && fetched) {
+        ITfRangeACP *acp = nullptr;
+        if (SUCCEEDED(selection.range->QueryInterface(IID_ITfRangeACP, reinterpret_cast<void **>(&acp)))) {
+            acp->GetExtent(&caret, &selected);
+            acp->Release();
+        }
+        selection.range->Release();
+    }
+    LONG kept = static_cast<LONG>(floating_.size());
+    if (kept) selected = 0;
+    LONG at = caret, length = kept ? kept : selected;
+    const Json &replace = op["replace"];
+    if (replace.isArray() && replace.size() == 2) {
+        at = replace[0].asInt();
+        length = replace[1].asInt();
+    }
+    // The part in the field (the word just committed, switched again; a selection typed over).
+    LONG fieldEnd = caret + selected;
+    if (at < fieldEnd) {
+        LONG inField = std::min(at + length, fieldEnd) - at;
+        ITfRange *range = RangeAt(cookie, context, at, inField);
+        bool whollyInField = at + length <= fieldEnd && !kept;
+        if (range) {
+            // An edit of what went in already, outside the word: made in the field.
+            range->SetText(cookie, 0, whollyInField && !mark ? text.c_str() : L"",
+                           whollyInField && !mark ? static_cast<LONG>(text.size()) : 0);
+            MoveCaretToEnd(cookie, context, range);
+            range->Release();
+        }
+        if (whollyInField && !mark) return;
+        length -= inField;
+        at = std::min(at + inField, caret);
+        caret = at;
+    }
+    // The part in the word kept here.
+    LONG offset = std::max(0L, std::min(at - caret, kept));
+    LONG covered = std::max(0L, std::min(length, kept - offset));
+    std::wstring before = floating_.substr(0, static_cast<size_t>(offset));
+    std::wstring after = floating_.substr(static_cast<size_t>(offset + covered));
+    if (mark) {
+        InsertAtCaret(cookie, context, before); // what the new word leaves before it went in
+        floating_ = text;
+    } else {
+        floating_.clear();
+        InsertAtCaret(cookie, context, before + text + after);
+    }
+    if (floating_.empty()) ClearFloating();
+}
+
 /// The word being typed underlined; a phrase being converted as its reading (thin), with the clause
 /// the candidates are for (`clause`, within the text) thick, as macOS draws its clauses.
 void TextService::ApplyAttributes(TfEditCookie cookie, ITfContext *context, ITfRange *range, bool converting,
@@ -713,6 +922,12 @@ void TextService::ClearAttributes(TfEditCookie cookie, ITfContext *context, ITfR
 STDMETHODIMP TextService::OnCompositionTerminated(TfEditCookie cookie, ITfComposition *composition) {
     // The app ended it (a click elsewhere): the text stays as it is, and the session starts afresh.
     if (composition_ && composition == composition_) {
+        Log("the app ended the composition in %s", Utf8(app_).c_str());
+        // As soon as it started: an app that won't keep one, whatever its context said.
+        if (GetTickCount() - compositionStartedAt_ < 100 && !appEndsCompositions_) {
+            appEndsCompositions_ = true;
+            Log("%s ends compositions at once: words are drawn at the caret", Utf8(app_).c_str());
+        }
         ITfRange *range = nullptr;
         if (compositionContext_ && SUCCEEDED(composition_->GetRange(&range)) && range) {
             ClearAttributes(cookie, compositionContext_, range);
