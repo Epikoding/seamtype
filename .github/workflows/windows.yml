@@ -170,6 +170,21 @@ jobs:
           Copy-Item build/Araso-Setup.exe "build/Araso-Setup-$env:ARASO_VERSION.exe"
           gh release upload $tag build/Araso-Setup.exe "build/Araso-Setup-$env:ARASO_VERSION.exe" --clobber --repo ${{ github.repository }}
 
+  typing:
+    # Real key events into Notepad through the installed input method.
+    needs: package
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Araso-Setup
+          path: build
+      - name: Install and type
+        shell: pwsh
+        run: windows/scripts/typing-test.ps1 build/Araso-Setup.exe
+
   cross:
     runs-on: ubuntu-latest
     steps:
