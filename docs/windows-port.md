@@ -88,16 +88,24 @@ new. This file maps each macOS piece to its Windows one and says where the two d
 - `scripts/typing-test`, `scripts/record-demo`: macOS automation.
 - UI-less mode for full-screen games (`ITfUIElement`): the candidate window is a topmost window,
   which an exclusive full-screen game may hide.
-- Tested on CI's Windows (`windows/scripts/typing-test.ps1`: real key events into a WPF TextBox and
-  Notepad), not yet on real hardware: ARM64 registration, Store (AppContainer) apps reaching the
-  pipe, and Korean keyboards' 한/영 and 한자 keys.
+- What CI checks (`windows/scripts/typing-test.ps1`, on `windows-latest` and `windows-11-arm`):
+  real key events into a WPF TextBox, Notepad's Edit control and the settings window's Try Typing
+  (Korean, English, a switch while typing and after a word, the pause tap, and 한/영 and 한자 as
+  `VK_HANGUL`/`VK_HANJA`); on ARM64, where the runner has no desktop to type into, the text service
+  created through COM in an ARM64 and an x64 process (`ArasoHost.exe --load-text-service`).
+  Not yet checked: a real Korean keyboard's keys, typing on ARM64, and Store (AppContainer) apps
+  reaching the pipe.
 
 ## Building
 
 - Swift: `swift build -c release --product ArasoBridge` on Windows with Swift 6.4 or later
   (6.2.0's optimizer crashed on a dependency). `swift test` runs the same tests as on macOS.
 - C++: `cmake -S windows -B build/windows -A x64 && cmake --build build/windows --config Release`
-  (also `-A Win32` for the text service and `-A ARM64`). `windows/scripts/check-cross.sh` compiles
+  (also `-A Win32` for the text service and `-A ARM64`). On ARM64 Windows, x64 apps under emulation
+  read the same COM registration as ARM64 apps, so `arm64\ArasoTip.dll` there is an ARM64X
+  forwarder (`windows/scripts/arm64x-forwarder.ps1`) to `ArasoTipArm64.dll` and `ArasoTipX64.dll`
+  beside it, and registration writes the forwarder's path (x86 apps have their own registry view
+  and the x86 build). `windows/scripts/check-cross.sh` compiles
   and links it on macOS or Linux with `zig c++`, to catch errors before CI.
 - `.github/workflows/windows.yml` builds and tests both on `windows-latest`, stages them with the
   Swift and Visual C++ runtimes and the data, runs `ArasoHost.exe --selftest`, and leaves
