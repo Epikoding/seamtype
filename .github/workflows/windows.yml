@@ -200,7 +200,16 @@ jobs:
           path: build
       - name: Install and type
         shell: pwsh
+        env:
+          ARASO_SCREENSHOTS: ${{ github.workspace }}/build/screenshots
         run: windows/scripts/typing-test.ps1 build/Araso-Setup.exe
+      - name: Screenshots
+        if: always() && matrix.runner == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: build/screenshots
+          if-no-files-found: ignore
 
   cross:
     runs-on: ubuntu-latest
