@@ -26,10 +26,10 @@ try {
     if ($LASTEXITCODE) { throw "cl (ARM64EC) failed" }
     # Import libraries of the two targets, so the forwarded names resolve (learn.microsoft.com,
     # "Build Arm64X files": an Arm64X pure forwarder DLL).
-    link /nologo /lib /machine:x64 /def:x64.def /out:ArasoTipX64.lib
-    if ($LASTEXITCODE) { throw "link /lib (x64) failed" }
-    link /nologo /lib /machine:arm64 /def:arm64.def /out:ArasoTipArm64.lib
-    if ($LASTEXITCODE) { throw "link /lib (ARM64) failed" }
+    lib /nologo /machine:x64 /def:x64.def /out:ArasoTipX64.lib
+    if ($LASTEXITCODE) { throw "lib (x64) failed" }
+    lib /nologo /machine:arm64 /def:arm64.def /out:ArasoTipArm64.lib
+    if ($LASTEXITCODE) { throw "lib (ARM64) failed" }
     link /nologo /dll /noentry /machine:arm64x /defArm64Native:arm64.def /def:x64.def empty_arm64.obj empty_x64.obj /out:ArasoTip.dll ArasoTipArm64.lib ArasoTipX64.lib
     if ($LASTEXITCODE) { throw "link (ARM64X) failed" }
 }
