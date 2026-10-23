@@ -8,8 +8,9 @@ import Foundation
 /// - Ctrl is ⌘ (the shortcut key: ⌘V is Ctrl+V), so right Ctrl tapped alone is the right ⌘ tap
 ///   that pauses by default, and Ctrl going down puts a held word in before a paste.
 /// - The Windows key is ⌃, Alt is ⌥ (right Alt tapped alone switches readings), Shift is ⇧.
-/// - On Korean keyboards the right Alt and right Ctrl keys are 한/영 and 한자: 한/영 is right ⌥,
-///   한자 right ⌘.
+/// - On Korean keyboards the right Alt and right Ctrl keys are 한/영 and 한자. Keys of their own, not
+///   modifiers (some keyboards send no release for them): 한/영 switches readings as soon as it goes
+///   down where right ⌥ is a switch key, and 한자 pauses where right ⌘ is the pause key.
 ///
 /// Letters, digits and symbols come from the physical key (its scan code) as on a US keyboard,
 /// whatever layout Windows has, as the Mac input method has macOS type on the US layout.
@@ -26,8 +27,6 @@ public enum KeyMapper {
     /// A modifier key, by which one it physically is.
     public enum Modifier: Equatable, Sendable {
         case leftShift, rightShift, leftControl, rightControl, leftAlt, rightAlt, leftWin, rightWin
-        /// 한/영 and 한자 (Korean keyboards, where right Alt and right Ctrl are).
-        case hangul, hanja
 
         /// The Mac key it stands for: what `PauseKey.Tap.keyCode` names.
         public var macKeyCode: UInt16 {
@@ -35,9 +34,9 @@ public enum KeyMapper {
             case .leftShift: return 56
             case .rightShift: return 60
             case .leftControl: return 55   // left ⌘
-            case .rightControl, .hanja: return 54  // right ⌘
+            case .rightControl: return 54  // right ⌘
             case .leftAlt: return 58
-            case .rightAlt, .hangul: return 61     // right ⌥
+            case .rightAlt: return 61     // right ⌥
             case .leftWin: return 59       // left ⌃
             case .rightWin: return 62      // right ⌃
             }
@@ -47,8 +46,8 @@ public enum KeyMapper {
         public var flag: KeyModifiers {
             switch self {
             case .leftShift, .rightShift: return .shift
-            case .leftControl, .rightControl, .hanja: return .command
-            case .leftAlt, .rightAlt, .hangul: return .option
+            case .leftControl, .rightControl: return .command
+            case .leftAlt, .rightAlt: return .option
             case .leftWin, .rightWin: return .control
             }
         }
@@ -69,8 +68,6 @@ public enum KeyMapper {
             return key.vk == vkRMenu || key.extended ? .rightAlt : .leftAlt
         case vkLWin: return .leftWin
         case vkRWin: return .rightWin
-        case vkHangul: return .hangul
-        case vkHanja: return .hanja
         default: return nil
         }
     }

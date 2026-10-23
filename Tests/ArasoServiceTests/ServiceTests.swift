@@ -176,7 +176,8 @@ final class Harness {
         let h = try Harness()
         h.type("dkssud")
         #expect(h.document.text == "안녕")
-        _ = h.tap(Keys.hangul, Keys.hangul)
+        // It switches as it goes down: some keyboards send no release for it.
+        #expect(h.press(Keys.hangul))
         #expect(h.document.text != "안녕")
         #expect(h.document.composition != nil)
     }
@@ -216,6 +217,12 @@ final class Harness {
         #expect(h.ui?.paused == false)
         h.type(" dkssud")
         #expect(h.document.text == "dkssud 안녕")
+    }
+
+    @Test func hanjaKeyPausesAsItGoesDown() throws {
+        let h = try Harness()
+        #expect(h.press(WindowsKey(vk: KeyMapper.vkHanja, scan: 0x71)))
+        #expect(h.ui?.paused == true)
     }
 
     @Test func pauseShortcutFromSettings() throws {
@@ -467,7 +474,7 @@ final class Harness {
         #expect(KeyMapper.modifier(WindowsKey(vk: 0x10, scan: 0x36)) == .rightShift)
         #expect(KeyMapper.modifier(WindowsKey(vk: 0x10, scan: 0x2A)) == .leftShift)
         #expect(KeyMapper.modifier(Keys.rightCtrl)?.macKeyCode == PauseKey.Tap.rightCommand.keyCode)
-        #expect(KeyMapper.modifier(Keys.hangul)?.macKeyCode == PauseKey.Tap.rightOption.keyCode)
+        #expect(KeyMapper.modifier(Keys.hangul) == nil) // a key of its own
     }
 
     @Test func aSlowTapIsNoTap() {

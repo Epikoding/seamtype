@@ -319,6 +319,17 @@ public final class ServiceRuntime {
         }
         if KeyMapper.isLock(key) { return false }
         client.taps.otherKey()
+        // 한/영 and 한자 (right Alt and right Ctrl on Korean keyboards) act as they go down.
+        if key.vk == KeyMapper.vkHangul {
+            guard session.policy.switchKeys.contains(.rightOption), !session.inVimNormalMode else { return false }
+            _ = session.handle(.cycle, client: field)
+            return true
+        }
+        if key.vk == KeyMapper.vkHanja {
+            guard settings.pauseKey == .tap(.rightCommand) else { return false }
+            togglePause(session, field, ui: &ui)
+            return true
+        }
         if case .shortcut(let shortcut) = settings.pauseKey, let code = KeyMapper.macKeyCode(key),
            shortcut.matches(keyCode: code, modifiers: KeyMapper.modifiers(key)) {
             togglePause(session, field, ui: &ui)

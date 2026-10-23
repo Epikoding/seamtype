@@ -25,7 +25,6 @@ bool IsModifier(WPARAM vk) {
     case VK_CONTROL: case VK_LCONTROL: case VK_RCONTROL:
     case VK_MENU: case VK_LMENU: case VK_RMENU:
     case VK_LWIN: case VK_RWIN:
-    case VK_HANGUL: case VK_HANJA:
         return true;
     default:
         return false;

@@ -48,9 +48,9 @@ new. This file maps each macOS piece to its Windows one and says where the two d
 | `PauseHUD` | the host's `PauseHud` | Araso's icon under the caret for a moment, struck through when paused. |
 | input menu (`menu()`) | the input indicator's menu (`LangBarButton`, `GUID_LBI_INPUTMODE`) | The same items and names, built by `ServiceRuntime.menu`. |
 | bundle identifier (`apps.json`) | exe name, lowercase (`notepad.exe`, `code.exe`) | A key ending in `.` still matches as a prefix. |
-| right ⌥ tap (switch key) | right Alt tap, or the 한/영 key | On Korean keyboards right Alt is 한/영 (`VK_HANGUL`). A lone right Alt's release is taken, so the app doesn't open its menu bar. |
+| right ⌥ tap (switch key) | right Alt tap, or the 한/영 key | On Korean keyboards right Alt is 한/영 (`VK_HANGUL`), which switches as it goes down (some keyboards send no release for it). A lone right Alt's release is taken, so the app doesn't open its menu bar. |
 | right ⇧ tap, ⌥Space, Esc, ⇧Esc | right Shift tap, Alt+Space, Esc, Shift+Esc | Alt+Space is taken only when chosen. |
-| ⌘ | Ctrl (the shortcut key) | Right Ctrl tapped alone pauses (`rightCommand`, the default), and Ctrl going down puts a held word in before a paste. The 한자 key is right Ctrl. The Windows key plays ⌃ (`rightControl`). |
+| ⌘ | Ctrl (the shortcut key) | Right Ctrl tapped alone pauses (`rightCommand`, the default), and Ctrl going down puts a held word in before a paste. The 한자 key pauses as it goes down. The Windows key plays ⌃ (`rightControl`). |
 | pause shortcut (⌃⌥P) | Ctrl/Alt/Win + key | settings.json keeps macOS key codes and modifier names on both, so the file is the same; `KeyMapper` maps scan codes to them. |
 | ⌃J/⌃K, F6/F7 | F6/F7 | Ctrl+J/K are app shortcuts on Windows. |
 | letters and symbols | from the key's scan code, as on a US keyboard | As macOS has Araso type on the US layout, whatever layout Windows has. |
