@@ -85,6 +85,11 @@ new. This file maps each macOS piece to its Windows one and says where the two d
 
 ## Not on Windows
 
+- The paper card the macOS switch key's list and kanji candidates are drawn on (the script's
+  letter with a check, pencil or sparkle, the list folding to the chosen row): Windows draws the
+  list before it (language tags, a filled pill on the reading the keys go in as, a dotted ring on
+  one corrected once) and a plain numbered candidate list. `UIState.Readings` already carries
+  `own` and `remembered` for it.
 - `scripts/typing-test`, `scripts/record-demo`: macOS automation.
 - UI-less mode for full-screen games (`ITfUIElement`): the candidate window is a topmost window,
   which an exclusive full-screen game may hide.

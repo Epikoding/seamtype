@@ -439,7 +439,8 @@ public final class ServiceRuntime {
         }
         if let readings = session.readings {
             ui.readings = UIState.Readings(texts: readings.texts, tags: readings.languages.map(\.tag),
-                                           selected: readings.selected, pick: readings.pick, once: readings.once)
+                                           selected: readings.selected, pick: readings.remembered ?? readings.own,
+                                           once: readings.once, own: readings.own, remembered: readings.remembered)
         }
         if let learned = session.learned {
             let learning: String

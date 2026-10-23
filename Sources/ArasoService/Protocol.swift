@@ -223,9 +223,14 @@ public struct UIState: Codable, Equatable, Sendable {
         /// `EN`, `KO`, `JA`, `MIX` per reading (the host localizes them).
         public var tags: [String]
         public var selected: Int
-        /// The reading the keys go in as when left alone, and the one corrected once.
+        /// The reading the keys go in as when left alone (the remembered one, else Araso's own),
+        /// which the host marks with a filled pill, and the one corrected once (a dotted ring).
         public var pick: Int?
         public var once: Int?
+        /// Araso's own reading and the one the dictionary remembers, as macOS's list marks them
+        /// (a sparkle, a check); the Windows list doesn't draw them apart yet.
+        public var own: Int?
+        public var remembered: Int?
     }
 
     public struct Learned: Codable, Equatable, Sendable {

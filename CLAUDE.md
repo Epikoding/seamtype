@@ -217,7 +217,10 @@ runtime.
   (`scripts/get.sh`) under those names for `releases/latest/download/`, plus the versioned copies,
   and the same two as `Legato.*` and `Seamtype.*` (see Earlier names below).
   The Windows workflow (`windows.yml`) adds `Araso-Setup.exe` and `Araso-Setup-<version>.exe` to
-  the same draft on the tag (signed when `WINDOWS_SIGN_PFX` is set; see the workflow's header).
+  the same draft on the tag once the repository variable `ARASO_WINDOWS_RELEASE` is `true` (signed
+  when `WINDOWS_SIGN_PFX` is set; see the workflow's header). Until then a Windows beta is its own
+  GitHub pre-release (`windows-beta-<n>`, the installer from a CI run's `Araso-Setup` artifact),
+  which `releases/latest` (the macOS update check, get.sh, the website) never returns.
   To release, run the Release workflow from the Actions tab with the new version
   (`gh workflow run release.yml -f version=0.1.11`): its `bump` job sets the version in
   `Resources/Info.plist` (and the build number one up), runs the tests and pushes that commit to
