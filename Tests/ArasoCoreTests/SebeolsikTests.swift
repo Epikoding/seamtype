@@ -27,7 +27,8 @@ import Testing
 
     @Test func numbersAndSymbolsArentKorean() {
         #expect(Self.compose("2026") == nil) // a number stays a number
-        #expect(Self.compose("00") == nil)
+        #expect(Self.compose("00") == "ㅋㅋ") // a reading to switch to: the engine reads a number
+        #expect(Self.compose("0") == nil)
         #expect(Self.compose("Hello") == nil) // ⇧H is 0 in Korean: no jamo
         #expect(Self.compose("kf?") == nil)
     }
@@ -52,7 +53,8 @@ import Testing
         }
     }
 
-    /// Typing through a session, digits and symbols arriving as the app's printable keys.
+    /// Typing through a session, digits and symbols arriving as the app's printable keys; ⎋ in
+    /// `text` is a switch key.
     static func type(_ text: String) -> String {
         KoreanLayout.$override.withValue(.sebeolsikFinal) {
             let field = FakeTextField()
@@ -60,8 +62,8 @@ import Testing
             let engine = DictionaryEngine(base: SplittingEngine(base: sharedEngine, english: sharedEngine.english), storeURL: store)
             let session = InputSession(engine: engine, policies: AppPolicies(overrides: [:]))
             for ch in text {
-                let key: InputSession.Key = ch.isLetter ? .letter(ch) : .printable(ch)
-                if !session.handle(key, client: field) { field.insertText(String(ch), replacing: nil) }
+                let key: InputSession.Key = ch == "⎋" ? .cycle : ch.isLetter ? .letter(ch) : .printable(ch)
+                if !session.handle(key, client: field), key != .cycle { field.insertText(String(ch), replacing: nil) }
             }
             return field.text
         }
@@ -78,6 +80,44 @@ import Testing
         #expect(Self.type("0e3hduf ") == "켭니다 ")
         #expect(Self.type("ldqkb#jgs ") == "짓궂은 ")    // # is the final ㅈ
         #expect(Self.type("jfspf! ") == "안팎 ")
+    }
+
+    /// #35: right after a Korean word, and after the symbols that follow it, a key types what
+    /// 3-set final has on it (⇧B ?, ⇧/ !, ⇧L 3, [ (); anywhere else what QWERTY has.
+    @Test func symbolsAfterKoreanAreThreeSets() {
+        #expect(Self.type("lfw ldhr2jtB ") == "잘 지냈어? ")
+        #expect(Self.type("jvyrsifsjduf? ") == "오랜만이다! ")    // ⇧/ is !
+        #expect(Self.type("jvyrsifsjduf?B ") == "오랜만이다!? ")
+        #expect(Self.type("jvyrsifsjduf.B ") == "오랜만이다.? ") // after punctuation QWERTY types too
+        #expect(Self.type("ldLH ") == "지30 ")                     // ⇧L ⇧H: digits
+        #expect(Self.type("mfqngjvf3[") == "핫스왑(")
+        #expect(Self.type("mfqngjvf3N ") == "핫스왑- ")
+        // Not at a word's start, after English or in a URL.
+        #expect(Self.type("jfsheamfncj4 Bob ") == "안녕하세요 Bob ")
+        #expect(Self.type("hello? ") == "hello? ")
+        #expect(Self.type("hello[B] ") == "hello[B] ")
+        #expect(Self.type("jvyrsifsjduf? B ") == "오랜만이다! B ")
+        #expect(Self.type("kgbB ") == "kgbB ")                 // 그ㅜ isn't a word
+        #expect(Self.type("mmB ") == "ㅎㅎ? ")
+    }
+
+    @Test func aSwitchKeyTakesTheSymbolBackToTheKey() {
+        #expect(Self.type("ldhr2jtB⎋") == "ldhr2jtB")
+        #expect(Self.type("ldhr2jtB⎋⎋") == "지냈어?")
+    }
+
+    /// 0 is ㅋ: after Korean, 0000 is ㅋㅋㅋㅋ; elsewhere a number, which a switch key makes ㅋㅋㅋㅋ.
+    @Test func zerosLaughAfterKorean() {
+        #expect(Self.type("lfw 0000 ") == "잘 ㅋㅋㅋㅋ ")
+        #expect(Self.type("lfw0000 ") == "잘ㅋㅋㅋㅋ ")
+        #expect(Self.type("lfw 0000? ") == "잘 ㅋㅋㅋㅋ! ")
+        #expect(Self.type("0000 ") == "0000 ")
+        #expect(Self.type("0000⎋ ") == "ㅋㅋㅋㅋ ")
+        #expect(Self.type("lfw 0000 ⎋") == "잘 0000 ")
+        #expect(Self.type("lfw 0 ") == "잘 0 ")            // one 0 is a number
+        #expect(Self.type("lfw 1,000 ") == "잘 1,000 ")
+        #expect(Self.type("lfw 10:00 ") == "잘 10:00 ")
+        #expect(Self.type("lfw 100 ") == "잘 100 ")
     }
 
     @Test func deleteTakesBackTheLastJamo() {

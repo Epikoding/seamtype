@@ -25,6 +25,11 @@ public enum KoreanLayout: String, Codable, CaseIterable, Sendable {
                               knows: (Character) -> Bool) -> Bool {
         guard self == .sebeolsikFinal, !key.isLetter, let jamo = SebeolsikFinal.jamo(onSeat: LatinLayout.current.seat(of: key)) else { return false }
         if keys.isEmpty { return jamo.position == .initial && !(afterDigit && key.isNumber) }
+        // ㅋㅋ, also after a word (잘ㅋㅋ): lone jamo, which only the decision tells from a number.
+        let laugh = String((keys + String(key)).reversed().prefix { LatinLayout.current.seat(of: $0) == "0" })
+        if SebeolsikFinal.isLaughter(laugh), case let front = String(keys.dropLast(laugh.count - 1)), front.isEmpty || SebeolsikFinal.composeJamo(front).map({ !$0.isBroken }) == true {
+            return true
+        }
         // As jamo, digits too: 0 is ㅋ, and 09 쿠 is on its way to 퀼프 (a number of them alone
         // still reads as a number when the word is decided).
         guard let before = SebeolsikFinal.composeJamo(keys), !before.isBroken,
@@ -40,8 +45,9 @@ public enum KoreanLayout: String, Codable, CaseIterable, Sendable {
 /// 세벌식 최종 (공병우 최종), as macOS's and libhangul's 3-set final type it. Jamo are kept as
 /// Hangul Compatibility Jamo, as in `Jamo`, with the position the key gives them.
 ///
-/// The shifted keys that type a digit or symbol in Korean (⇧H 0, ⇧B ?, ⇧M ") have no jamo here: they
-/// type as on QWERTY, and a word with one is not Korean.
+/// The keys that type a digit or symbol in Korean (⇧H 0, ⇧B ?, ⇧M ", [ () have no jamo here: in a
+/// word they type as on QWERTY, and a word with one is not Korean. Right after a Korean word they
+/// type 3-set's symbol instead (`symbol(for:)`, asked by `InputSession`).
 public enum SebeolsikFinal {
     public enum Position: Sendable { case initial, medial, final }
 
@@ -66,6 +72,27 @@ public enum SebeolsikFinal {
                      ("#", "ㅈ"), ("Z", "ㅊ"), ("C", "ㅋ"), ("W", "ㅌ"), ("Q", "ㅍ"), ("1", "ㅎ")])
         return map
     }()
+
+    /// The digits and symbols 3-set final types where QWERTY types something else, by the QWERTY
+    /// key as typed (? is ⇧/, which types !). Not , . + or ⇧, ⇧. (the same as on QWERTY), and no
+    /// key with a jamo: ⇧1 is ㄲ, never !.
+    private static let symbols: [Character: Character] = [
+        // Shifted punctuation.
+        "~": "※", "^": "=", "&": "“", "*": "”", "(": "'", ")": "~", "_": ";", "{": "%", "}": "/",
+        "|": "\\", "\"": "·", "<": ",", ">": ".", "?": "!", "B": "?", "N": "-", "M": "\"",
+        // Shifted digits on the right hand.
+        "H": "0", "J": "1", "K": "2", "L": "3", ":": "4", "Y": "5", "U": "6", "I": "7", "O": "8", "P": "9",
+        // Unshifted symbols.
+        "`": "*", "-": ")", "=": ">", "[": "(", "]": "<", "\\": ":",
+    ]
+
+    /// The digit or symbol 3-set final types on `key` (as typed) where QWERTY types another.
+    public static func symbol(for key: Character) -> Character? { symbols[LatinLayout.current.seat(of: key)] }
+
+    /// ㅋ typed two times or more on 0 (ㅋㅋ): a laugh after Korean, a number anywhere else.
+    public static func isLaughter(_ keys: String) -> Bool {
+        keys.count >= 2 && keys.allSatisfy { LatinLayout.current.seat(of: $0) == "0" }
+    }
 
     /// The jamo on a QWERTY key (shifted characters as typed: ! is the 1 key with Shift).
     static func jamo(onSeat seat: Character) -> Key? { table[seat] }
@@ -95,9 +122,10 @@ public enum SebeolsikFinal {
     static func startsSyllable(_ key: Character) -> Bool { jamo(for: key)?.position == .initial }
 
     /// Nil when a key has no jamo, or when every key is a digit: a number stays a number (05 isn't
-    /// 큐, 00 isn't ㅋㅋ).
+    /// 큐). Only 00 has its ㅋㅋ, as a reading to switch to: the engine still reads it as a number,
+    /// and `InputSession` reads it as ㅋㅋ after Korean.
     static func compose(keys: String) -> HangulComposer.Result? {
-        guard !keys.allSatisfy(\.isNumber) else { return nil }
+        guard !keys.allSatisfy(\.isNumber) || isLaughter(keys) else { return nil }
         return composeJamo(keys)
     }
 

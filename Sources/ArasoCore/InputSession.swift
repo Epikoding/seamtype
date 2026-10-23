@@ -88,6 +88,14 @@ public final class InputSession {
         case hiragana
         /// Tab, shortcuts…: commit and let the app handle the key.
         case other
+
+        /// The character a letter or printable key types.
+        var character: Character? {
+            switch self {
+            case .letter(let ch), .printable(let ch): return ch
+            default: return nil
+            }
+        }
     }
 
     /// A kana→kanji conversion in progress.
@@ -155,12 +163,20 @@ public final class InputSession {
         let previous: Language?
         /// A segment of a URL or path: a switch there isn't a correction to learn.
         var learns = true
+        /// The key as typed when `boundary` is 3-set's symbol for it (B for ?): what the boundary
+        /// goes back to when the word is switched out of Korean (지냈어? → ldhr2jtB).
+        var typedBoundary: String?
 
         /// The same word after Delete took back its boundary character.
         var withoutBoundary: Committed {
             Committed(keys: keys, decided: decided, committedAs: committedAs, language: language,
                       text: String(text.dropLast(boundary.count)), boundary: "", location: location,
                       previous: previous, learns: learns)
+        }
+
+        /// The boundary as it goes in after the word in `language`.
+        func boundary(in language: Language) -> String {
+            language == .korean ? boundary : typedBoundary ?? boundary
         }
     }
 
@@ -211,6 +227,12 @@ public final class InputSession {
     private var previewLanguage: Language?
     /// The last key passed to the app was a digit (so "." there is a decimal point).
     private var afterDigit = false
+    /// On 3-set, the keys since the last Korean word are symbols typed straight after it (지냈어?,
+    /// 그래...): 3-set's symbols go on there (⇧/ is !), as they do right after the word itself.
+    private var afterKoreanSymbol = false
+    /// The word being typed starts after a space or straight after Hangul: on 3-set its 0s may
+    /// be ㅋㅋ there, not in 1,000 or 10:00.
+    private var startsAfterHangul = true
     /// Digits and symbols the app just typed for us, one after another, and where they start:
     /// a switch key right after them makes them Japanese (123 → １２３, [ → 「), and a Japanese
     /// phrase typed right after digits converts with them (3ji → 3時).
@@ -298,6 +320,8 @@ public final class InputSession {
     public func handle(_ key: Key, client: TextClient) -> Bool {
         readings = nil
         learned = nil
+        let inKoreanSymbols = afterKoreanSymbol
+        afterKoreanSymbol = false
         guard policy.enabled, !paused else { return false }
         if vimMode == .normal {
             // Vim's normal mode: every key is a command. ⇧Esc is the way out if vim's last word
@@ -326,6 +350,14 @@ public final class InputSession {
            KoreanLayout.current.continuesWord(keys, with: ch, afterDigit: afterDigit, knows: Self.koreanModel.knowsSyllableIncludingRare),
            !Self.hasURLMarker(run(client)) {
             return handle(.letter(ch), client: client)
+        }
+        // On 3-set a key with a digit or symbol there (⇧B ?, ⇧/ !, ⇧L 3, [ () types it right after
+        // a Korean word and after the symbols that follow one; anywhere else it is QWERTY's (Bob),
+        // also after Hangul with stray jamo (kgb, 그ㅜ), which isn't a word.
+        if let typed = key.character, let symbol = SebeolsikFinal.symbol(for: typed), KoreanLayout.current == .sebeolsikFinal,
+           heldBoundary == nil, !inURLRun, keys.isEmpty ? inKoreanSymbols : currentLanguage() == .korean && readsAsKoreanWord() {
+            typeKoreanSymbol(symbol, typed: typed, client)
+            return true
         }
 
         if case .printable = key, keys.isEmpty {} else { afterDigit = false }
@@ -374,7 +406,9 @@ public final class InputSession {
                 afterNumberInJapanese = japaneseEnabled && previousLanguage == .japanese
                     && passedRun?.text.last?.isNumber == true && cursor.location != NSNotFound
                     && passedRunRange(endingAt: cursor.location, client) != nil
-                inURLRun = Self.hasURLMarker(run(client))
+                let before = run(client)
+                inURLRun = Self.hasURLMarker(before)
+                startsAfterHangul = before.last.map(Self.isHangul) ?? true
             }
             addedNMarker = false
             pinned = nil
@@ -475,6 +509,7 @@ public final class InputSession {
                 }
                 notePassed(ch, client)
                 noteRun(String(ch))
+                afterKoreanSymbol = inKoreanSymbols && ch != " "
                 return false
             }
             // A symbol that makes the run a URL or path (ho@, www.) ends the word, half-width.
@@ -520,6 +555,8 @@ public final class InputSession {
                                    language: word.language, text: word.text + String(ch), boundary: String(ch),
                                    location: location, previous: previous, learns: !inURLRun)
             noteRun(word.text + String(ch))
+            afterKoreanSymbol = KoreanLayout.current == .sebeolsikFinal && word.language.sentenceLanguage == .korean
+                && ch != " " && !inURLRun
             return false
 
         case .enter:
@@ -585,6 +622,36 @@ public final class InputSession {
         let word = finishWord()
         client?.insertText(word.text + boundary, replacing: nil)
         noteRun(word.text + boundary)
+    }
+
+    /// The keys make whole syllables, or jamo on their own (ㅎㅎ, and ㅋㅋ on 0).
+    private func readsAsKoreanWord() -> Bool {
+        HangulComposer.compose(keys: keys).map { $0.strayJamo.isEmpty || $0.isJamoAbbreviation } == true
+    }
+
+    /// 3-set's `symbol` for the key `typed`, after a Korean word: the word goes in with it, and a
+    /// switch key right after takes both back to the keys as typed (지냈어? → ldhr2jtB). After the
+    /// symbols that follow the word, it goes in alone.
+    private func typeKoreanSymbol(_ symbol: Character, typed: Character, _ client: TextClient) {
+        afterKoreanSymbol = true
+        afterDigit = symbol.isNumber // ⇧L⇧H is 30, and 0 after it a digit too
+        passedRun = nil
+        if keys.isEmpty {
+            client.insertText(String(symbol), replacing: nil)
+            noteRun(String(symbol))
+            return
+        }
+        let marked = client.markedRange()
+        let location = marked.location != NSNotFound ? marked.location : client.selectedRange().location
+        let previous = previousLanguage
+        let word = finishWord()
+        let text = word.text + String(symbol)
+        // Not left for the app to type as with QWERTY's symbols: its key types something else.
+        client.insertText(text, replacing: nil)
+        lastCommit = Committed(keys: word.keys, decided: word.decided, committedAs: word.language,
+                               language: word.language, text: text, boundary: String(symbol),
+                               location: location, previous: previous, typedBoundary: String(typed))
+        noteRun(text)
     }
 
     /// Drops the word being typed: nothing goes in, as when Delete takes its last key.
@@ -1144,6 +1211,14 @@ public final class InputSession {
             lastTrace = Trace(keys: keys, previous: previousLanguage, decision: decision, partial: partial)
             return decision
         }
+        // 3-set's 0 is ㅋ: after Korean, 0000 is ㅋㅋㅋㅋ (a number to the engine, which a switch key gives).
+        if KoreanLayout.current == .sebeolsikFinal, previousLanguage == .korean, startsAfterHangul, SebeolsikFinal.isLaughter(keys) {
+            keptEnglishByStrict = false
+            let decision = Decision(language: .korean, confidence: SplittingEngine.confidence,
+                                    output: HangulComposer.compose(keys: keys)?.text ?? keys, explanation: "ㅋ on 3-set's 0 after Korean")
+            lastTrace = Trace(keys: keys, previous: previousLanguage, decision: decision, partial: partial)
+            return decision
+        }
         var d = engine.decide(keys, context: DecisionContext(previousLanguage: previousLanguage, partial: partial, app: app))
         // A word learned as Japanese while Japanese was on: with it off, the engine without what
         // was learned decides it (sushi stays sushi, not すし). Turned on again, it is learned again.
@@ -1282,6 +1357,10 @@ public final class InputSession {
     }
 
     private static let koreanModel = KoreanModel()
+
+    private static func isHangul(_ ch: Character) -> Bool {
+        ("가"..."힣").contains(ch) || ("ㄱ"..."ㅣ").contains(ch)
+    }
 
     /// Korean with another language typed straight after it reads as broken Hangul: 이력 then
     /// rireki (dlfurrireki, 이력갹다ㅑ), 오늘은 then google에서 (dhsmfdmsgoogledptj, 오늘은해ㅐ힏에서).
@@ -1521,13 +1600,13 @@ public final class InputSession {
               client.text(in: range) == commit.text else { return nil }
 
         let language = commit.language.next(for: commit.keys, japanese: japaneseEnabled, splits: engineSplits(commit.keys))
-        let text = committedReading(commit.keys, as: language) + commit.boundary
+        let text = committedReading(commit.keys, as: language) + commit.boundary(in: language)
         client.insertText(text, replacing: range)
         if runText.hasSuffix(commit.text) { runText = String(runText.dropLast(commit.text.count)) + text }
         previousLanguage = language.sentenceLanguage
         return Committed(keys: commit.keys, decided: commit.decided, committedAs: commit.committedAs,
                          language: language, text: text, boundary: commit.boundary, location: commit.location,
-                         previous: commit.previous, learns: commit.learns)
+                         previous: commit.previous, learns: commit.learns, typedBoundary: commit.typedBoundary)
     }
 
     private func closeFlipWindow() {
