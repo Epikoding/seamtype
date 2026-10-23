@@ -47,6 +47,9 @@ public struct ServiceRequest: Codable, Sendable {
         case decide
         /// The readings some keys can be added to the dictionary as (`keys`), for the Dictionary pane.
         case readings
+        /// A key pressed to record the pause shortcut (`key`): the shortcut as settings.json stores
+        /// it, and why it can't pause if it can't.
+        case shortcut
     }
 
     public var op: Op
@@ -245,6 +248,11 @@ public struct ServiceResponse: Codable, Equatable, Sendable {
     public var decision: TraceInfo?
     /// For `readings`: each reading the keys can go in as, in the switch key's order.
     public var choices: [Choice]?
+    /// For `shortcut`: the shortcut, its name as Windows writes it, and `types`, `arasos` or
+    /// `switchKey` when it can't pause.
+    public var shortcut: PauseKey.Shortcut?
+    public var shortcutName: String?
+    public var problem: String?
     public var error: String?
     /// Clients with edits waiting (`pending`): the host tells their text services to ask.
     public var notify: [Int]?

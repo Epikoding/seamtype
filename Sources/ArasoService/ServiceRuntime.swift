@@ -175,6 +175,19 @@ public final class ServiceRuntime {
                 language = language.next(for: keys, japanese: settings.japanese)
             }
             response.choices = languages.map { Choice(language: $0.rawValue, text: UserDictionary.reading(keys, as: $0)) }
+        case .shortcut:
+            response = ServiceResponse()
+            guard let key = request.key, KeyMapper.modifier(key) == nil, let code = KeyMapper.macKeyCode(key),
+                  let name = KeyMapper.keyName(key) else { break }
+            let shortcut = PauseKey.Shortcut(keyCode: code, modifiers: KeyMapper.modifiers(key), key: name)
+            response.shortcut = shortcut
+            response.shortcutName = KeyMapper.shortcutName(shortcut)
+            switch shortcut.problem(switchKeys: AppPolicies.load().defaultPolicy.switchKeys) {
+            case .types?: response.problem = "types"
+            case .arasos?: response.problem = "arasos"
+            case .switchKey?: response.problem = "switchKey"
+            case nil: break
+            }
         case .vim:
             response = ServiceResponse()
             guard let signal = request.vim.flatMap(VimSignal.init(rawValue:)) else { break }

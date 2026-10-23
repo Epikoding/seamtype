@@ -1,7 +1,7 @@
 # The Windows input method (docs/windows-port.md): the Swift core and its tests on Windows, the
-# C++ text service and host with MSVC for every architecture, and the installer, left as an
-# artifact. The C++ is also cross-compiled with zig on Linux, as windows/scripts/check-cross.sh
-# does on a Mac.
+# C++ text service and host with MSVC for every architecture, then everything staged together,
+# self-tested and packed into Araso-Setup.exe (an artifact; a release uploads it). The C++ is also
+# cross-compiled with zig on Linux, as windows/scripts/check-cross.sh does on a Mac.
 name: Windows
 
 on:
@@ -22,8 +22,8 @@ jobs:
       - run: git config --global core.autocrlf false
       - uses: compnerd/gha-setup-swift@main
         with:
-          branch: swift-6.2-release
-          tag: 6.2-RELEASE
+          branch: swift-6.4.1-release
+          tag: 6.4.1-RELEASE
       - uses: actions/checkout@v4
       - run: swift --version
       - name: Build
@@ -32,18 +32,21 @@ jobs:
         run: swift test
       - name: Bridge (release)
         run: swift build -c release --product ArasoBridge
-      - name: Collect the bridge and the Swift runtime
+      - name: Collect the bridge, the Swift runtime and the data
         shell: pwsh
         run: |
           $out = "build/swift"
-          New-Item -ItemType Directory -Force $out | Out-Null
+          New-Item -ItemType Directory -Force $out, "$out/Resources/ko.lproj" | Out-Null
           Copy-Item .build/release/ArasoBridge.dll $out
           # The Swift runtime the bridge needs, from the toolchain's redistributable folder.
           $core = Get-ChildItem -Path "$env:LOCALAPPDATA\Programs\Swift", "$env:ProgramFiles\Swift", "C:\Library" -Recurse -Filter swiftCore.dll -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -match 'Runtimes|bin' -and $_.FullName -match 'x86_64|usr\\bin' } | Select-Object -First 1
+            Where-Object { $_.FullName -match 'Runtimes' -and $_.FullName -notmatch 'arm64|aarch64|i686|x86\\' } | Select-Object -First 1
           if (-not $core) { throw "swiftCore.dll not found" }
           Write-Host "runtime: $($core.DirectoryName)"
           Get-ChildItem $core.DirectoryName -Filter *.dll | Copy-Item -Destination $out
+          Copy-Item Sources/ArasoCore/Data/*.txt "$out/Resources"
+          Copy-Item -Recurse .build/checkouts/AzooKeyKanaKanjiConverter/Sources/KanaKanjiConverterModuleWithDefaultDictionary/azooKey_dictionary_storage/Dictionary "$out/Resources/Dictionary"
+          Copy-Item Resources/ko.lproj/Localizable.strings, windows/Resources/ko.lproj/Windows.strings "$out/Resources/ko.lproj"
           Get-ChildItem $out
       - uses: actions/upload-artifact@v4
         with:
@@ -57,8 +60,14 @@ jobs:
         arch: [x64, Win32, ARM64]
     steps:
       - uses: actions/checkout@v4
+      - name: Version
+        shell: pwsh
+        run: |
+          $plist = Get-Content Resources/Info.plist -Raw
+          $version = [regex]::Match($plist, '<key>CFBundleShortVersionString</key>\s*<string>([^<]+)</string>').Groups[1].Value
+          "ARASO_VERSION=$version" >> $env:GITHUB_ENV
       - name: Configure
-        run: cmake -S windows -B build/windows -A ${{ matrix.arch }} -DARASO_HOST=${{ matrix.arch == 'Win32' && 'OFF' || 'ON' }}
+        run: cmake -S windows -B build/windows -A ${{ matrix.arch }} -DARASO_VERSION=${{ env.ARASO_VERSION }} -DARASO_HOST=${{ matrix.arch == 'Win32' && 'OFF' || 'ON' }}
       - name: Build
         run: cmake --build build/windows --config Release
       - uses: actions/upload-artifact@v4
@@ -67,6 +76,48 @@ jobs:
           path: |
             build/windows/Release/*.dll
             build/windows/Release/*.exe
+
+  package:
+    needs: [swift, cpp]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: build/artifacts
+      - name: Stage
+        shell: pwsh
+        run: |
+          $stage = "build/stage"
+          New-Item -ItemType Directory -Force $stage, "$stage/x86", "$stage/arm64", "$stage/vim" | Out-Null
+          Copy-Item -Recurse build/artifacts/swift-x64/* $stage
+          Copy-Item build/artifacts/cpp-x64/ArasoHost.exe, build/artifacts/cpp-x64/ArasoTip.dll $stage
+          Copy-Item build/artifacts/cpp-Win32/ArasoTip.dll "$stage/x86"
+          Copy-Item build/artifacts/cpp-ARM64/ArasoTip.dll "$stage/arm64"
+          Copy-Item scripts/vim/araso.lua, scripts/vim/araso.vim "$stage/vim"
+          # The Swift runtime needs the Visual C++ runtime, which a fresh Windows may not have: beside it.
+          foreach ($dll in 'vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll') {
+            Copy-Item "$env:WINDIR\System32\$dll" $stage
+          }
+          Get-ChildItem -Recurse $stage | Select-Object -First 80 FullName
+      - name: Self-test
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath build/stage/ArasoHost.exe -ArgumentList '--selftest' -Wait -PassThru -NoNewWindow
+          if ($process.ExitCode -ne 0) { throw "selftest failed ($($process.ExitCode))" }
+      - name: Installer
+        shell: pwsh
+        run: |
+          $plist = Get-Content Resources/Info.plist -Raw
+          $version = [regex]::Match($plist, '<key>CFBundleShortVersionString</key>\s*<string>([^<]+)</string>').Groups[1].Value
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; }
+          & $iscc "/DStage=$PWD\build\stage" "/DVersion=$version" /O"$PWD\build" windows\installer\Araso.iss
+          if ($LASTEXITCODE -ne 0) { throw "iscc failed" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Araso-Setup
+          path: build/Araso-Setup.exe
 
   cross:
     runs-on: ubuntu-latest

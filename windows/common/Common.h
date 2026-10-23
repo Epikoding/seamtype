@@ -35,6 +35,7 @@ enum CopyDataKind : ULONG_PTR {
     kCopyFilesChanged = 2, // host → settings window: the menu changed the files
     kCopyTrace = 3,        // host → settings window: how the word typed in Try Typing was decided (JSON)
     kCopyVim = 4,          // `--vim` → host: {"vim": mode, "app": exe}
+    kCopyShowTab = 5,      // host → an open settings window: come forward on this pane
 };
 
 /// One request/answer over a pipe in message mode, with a timeout so a hung host never hangs the

@@ -32,7 +32,7 @@ if(ARASO_HOST AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/host/Main.cpp")
   set_source_files_properties(host/ArasoHost.rc PROPERTIES COMPILE_DEFINITIONS "${VERSION_DEFINES}")
   target_compile_definitions(ArasoHost PRIVATE ARASO_VERSION_STRING="${ARASO_VERSION}")
   target_link_libraries(ArasoHost PRIVATE ole32 oleaut32 uuid user32 gdi32 gdiplus advapi32 shell32 comctl32
-                        winhttp wintrust crypt32 dwmapi uxtheme shlwapi version imm32)
+                        winhttp wintrust crypt32 dwmapi uxtheme shlwapi version imm32 shcore)
   if(MSVC)
     target_link_options(ArasoHost PRIVATE /ENTRY:wWinMainCRTStartup)
   endif()

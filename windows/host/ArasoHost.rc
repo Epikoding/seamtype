@@ -1,0 +1,30 @@
+#include <windows.h>
+#include "resource.h"
+
+IDI_HOST ICON "../Resources/Araso.ico"
+IDI_HOST_PAUSED ICON "../Resources/ArasoPaused.ico"
+CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "ArasoHost.manifest"
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION ARASO_VERSION_COMMAS
+ PRODUCTVERSION ARASO_VERSION_COMMAS
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_APP
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "nytta studio"
+            VALUE "FileDescription", "Araso"
+            VALUE "FileVersion", ARASO_VERSION_STRING
+            VALUE "ProductName", "Araso"
+            VALUE "ProductVersion", ARASO_VERSION_STRING
+            VALUE "LegalCopyright", "MIT License"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

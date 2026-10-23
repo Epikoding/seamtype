@@ -305,6 +305,22 @@ final class Harness {
         #expect(choices.contains(Choice(language: "korean", text: "안녕")))
     }
 
+    @Test func recordingAPauseShortcut() throws {
+        let h = try Harness()
+        var request = ServiceRequest(op: .shortcut)
+        request.key = WindowsKey(vk: 0x50, scan: 0x19, ctrl: true, alt: true)
+        let response = h.runtime.handle(request)
+        #expect(response.shortcut == PauseKey.Shortcut(keyCode: 35, modifiers: [.command, .option], key: "P"))
+        #expect(response.shortcutName == "Ctrl+Alt+P")
+        #expect(response.problem == nil)
+        request.key = WindowsKey(vk: 0x50, scan: 0x19)
+        #expect(h.runtime.handle(request).problem == "types")
+        request.key = WindowsKey(vk: 0x75, scan: 0x40)
+        #expect(h.runtime.handle(request).problem == "arasos")
+        request.key = WindowsKey(vk: 0x74, scan: 0x3F)
+        #expect(h.runtime.handle(request).shortcutName == "F5")
+    }
+
     @Test func menuOpensTheSettingsWindow() throws {
         let h = try Harness()
         var select = ServiceRequest(op: .menuSelect, client: h.client)

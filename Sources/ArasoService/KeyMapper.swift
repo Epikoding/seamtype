@@ -194,6 +194,27 @@ public enum KeyMapper {
         vkMultiply: 67, vkAdd: 69, vkSubtract: 78, vkDecimal: 65, vkDivide: 75,
     ]
 
+    /// The key as printed on it, for a shortcut ("P", "5", "F5", "Space"); nil for a key with no name.
+    public static func keyName(_ key: WindowsKey) -> String? {
+        if (vkF1..<(vkF1 + 24)).contains(key.vk) { return "F\(key.vk - vkF1 + 1)" }
+        switch key.vk {
+        case vkSpace: return "Space"
+        case vkReturn: return "Enter"
+        case vkTab: return "Tab"
+        case vkBack: return "Backspace"
+        case vkEscape: return "Esc"
+        case vkLeft: return "←"
+        case vkRight: return "→"
+        case vkUp: return "↑"
+        case vkDown: return "↓"
+        default: break
+        }
+        if !key.extended, let code = byScan[key.scan], let ch = LatinLayout.qwerty.character(keyCode: code, shift: false, capsLock: false) {
+            return String(ch).uppercased()
+        }
+        return character(WindowsKey(vk: key.vk, scan: key.scan, extended: key.extended)).map { String($0) }
+    }
+
     /// How a key on Windows is written in the settings window (the Mac glyphs mean nothing there).
     public static func tapName(_ tap: PauseKey.Tap) -> String {
         switch tap {

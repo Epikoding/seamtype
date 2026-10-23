@@ -18,13 +18,13 @@ echo "text service ($target)"
 zig rc /:target "$arch" /i tip $(echo "/dARASO_VERSION_COMMAS=$commas") "/dARASO_VERSION_STRING=\"$version\"" /fo "$out/ArasoTip.res" -- tip/ArasoTip.rc
 zig c++ -target "$target" $flags -shared -o "$out/ArasoTip.dll" \
     tip/*.cpp common/Common.cpp common/Json.cpp "$out/ArasoTip.res" tip/ArasoTip.def \
-    -lole32 -loleaut32 -luuid -luser32 -ladvapi32 -static-libgcc -static-libstdc++
+    -lole32 -loleaut32 -luuid -luser32 -ladvapi32
 
 if [ ! -f host/Main.cpp ]; then echo "ok: $out (no host yet)"; exit 0; fi
 echo "host ($target)"
 zig rc /:target "$arch" /i host $(echo "/dARASO_VERSION_COMMAS=$commas") "/dARASO_VERSION_STRING=\"$version\"" /fo "$out/ArasoHost.res" -- host/ArasoHost.rc
-zig c++ -target "$target" $flags -mwindows -municode -o "$out/ArasoHost.exe" \
+zig c++ -target "$target" $flags -municode -Wl,--subsystem,windows -o "$out/ArasoHost.exe" \
     host/*.cpp common/Common.cpp common/Json.cpp "$out/ArasoHost.res" \
     -lole32 -loleaut32 -luuid -luser32 -lgdi32 -lgdiplus -ladvapi32 -lshell32 -lcomctl32 -lwinhttp -lwintrust \
-    -lcrypt32 -ldwmapi -luxtheme -lshlwapi -lversion -limm32 -static-libgcc -static-libstdc++
+    -lcrypt32 -ldwmapi -luxtheme -lshlwapi -lversion -limm32 -lshcore
 echo "ok: $out"
