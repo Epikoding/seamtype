@@ -31,6 +31,18 @@ bool IsModifier(WPARAM vk) {
     }
 }
 
+/// Screen pixels, whatever the app's DPI awareness: an app that isn't DPI aware reports its text in
+/// scaled coordinates, and the host (per-monitor aware) places its windows in physical ones.
+RECT Physical(HWND window, RECT rect) {
+    if (!window) return rect;
+    POINT topLeft = {rect.left, rect.top}, bottomRight = {rect.right, rect.bottom};
+    if (LogicalToPhysicalPointForPerMonitorDPI(window, &topLeft) &&
+        LogicalToPhysicalPointForPerMonitorDPI(window, &bottomRight)) {
+        rect = {topLeft.x, topLeft.y, bottomRight.x, bottomRight.y};
+    }
+    return rect;
+}
+
 Json RectJson(const RECT &rect) {
     Json out = Json::array();
     out.push(static_cast<int>(rect.left));
@@ -494,13 +506,15 @@ Json TextService::Rects(TfEditCookie cookie, ITfContext *context) {
     Json out = Json::object();
     ITfContextView *view = nullptr;
     if (FAILED(context->GetActiveView(&view)) || !view) return out;
+    HWND window = nullptr;
+    view->GetWnd(&window);
     if (composition_ && compositionContext_ == context) {
         ITfRange *range = nullptr;
         if (SUCCEEDED(composition_->GetRange(&range)) && range) {
             RECT rect = {};
             BOOL clipped = FALSE;
             if (SUCCEEDED(view->GetTextExt(cookie, range, &rect, &clipped)) && rect.bottom > rect.top) {
-                out.set("word", RectJson(rect));
+                out.set("word", RectJson(Physical(window, rect)));
             }
             range->Release();
         }
@@ -514,7 +528,7 @@ Json TextService::Rects(TfEditCookie cookie, ITfContext *context) {
             RECT rect = {};
             BOOL clipped = FALSE;
             if (SUCCEEDED(view->GetTextExt(cookie, caret, &rect, &clipped)) && rect.bottom > rect.top) {
-                out.set("caret", RectJson(rect));
+                out.set("caret", RectJson(Physical(window, rect)));
             }
             caret->Release();
         }

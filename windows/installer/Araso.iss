@@ -1,6 +1,7 @@
-; Araso-Setup.exe: installs the Windows input method into Program Files, registers its text
+﻿; Araso-Setup.exe: installs the Windows input method into Program Files, registers its text
 ; service (x64, x86 and, on ARM64 Windows, ARM64) and adds it to the user's input methods.
 ; Built by .github/workflows/windows.yml from the staged folder (/DStage=…, /DVersion=…).
+; Saved as UTF-8 with a BOM: Inno Setup reads the Korean text right only so.
 ;   iscc /DStage=build\stage /DVersion=0.2.4 windows\installer\Araso.iss
 
 #ifndef Version
@@ -35,13 +36,18 @@ CloseApplications=no
 MinVersion=10.0.17763
 
 [Languages]
+; Korean when this Inno Setup has its translation (6.3 and later do).
+#if FileExists(AddBackslash(CompilerPath) + "Languages\Korean.isl")
 Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
+#endif
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [CustomMessages]
+#if FileExists(AddBackslash(CompilerPath) + "Languages\Korean.isl")
 korean.DeleteData=설정과 학습한 단어도 지울까요?%n(%APPDATA%\Araso)
-english.DeleteData=Also delete settings and learned words?%n(%APPDATA%\Araso)
 korean.AddedNote=Araso를 입력기 목록에 추가했습니다. 작업 표시줄의 입력 표시기(한/영 옆)에서 Araso를 고르세요.
+#endif
+english.DeleteData=Also delete settings and learned words?%n(%APPDATA%\Araso)
 english.AddedNote=Araso was added to your input methods. Pick it in the taskbar's input indicator.
 
 [Files]

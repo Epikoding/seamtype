@@ -38,6 +38,7 @@ if(ARASO_HOST AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/host/Main.cpp")
   target_link_libraries(ArasoHost PRIVATE ole32 oleaut32 uuid user32 gdi32 gdiplus advapi32 shell32 comctl32
                         winhttp wintrust crypt32 dwmapi uxtheme shlwapi version imm32 shcore)
   if(MSVC)
-    target_link_options(ArasoHost PRIVATE /ENTRY:wWinMainCRTStartup)
+    # The manifest is ArasoHost.rc's (PerMonitorV2, common controls 6), not the linker's own.
+    target_link_options(ArasoHost PRIVATE /ENTRY:wWinMainCRTStartup /MANIFEST:NO)
   endif()
 endif()
