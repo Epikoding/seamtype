@@ -242,6 +242,12 @@ function Tap([int]$scan) {
 # window where Notepad is Windows 11's own app (CI's ARM64 runner).
 $classic = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "winforms" } else { "notepad" }
 
+# The first WPF window of a fresh machine loads .NET's WPF for a while and may come up behind:
+# one opened and closed first.
+$warm = Open-Field "wpf"
+Start-Sleep -Seconds 2
+Stop-Process -Id $warm.process.Id -Force
+
 $results = @(
     # A WPF TextBox: a TSF text store, where the word is composed in the text.
     (Case "dkssud hello " "안녕 hello " $null "wpf"),

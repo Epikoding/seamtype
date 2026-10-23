@@ -63,6 +63,8 @@ try {
     $answer = Send @{ op = "blur"; client = $client; context = (Context) }
     Apply $answer.reply.ops
     if ($script:text -ne "안녕" -or $script:marked) { throw "blur left '$script:text' (marked: $script:marked)" }
+    $model = Send @{ op = "settings" }
+    Write-Host "pipe test: the settings model says version '$($model.settings.version)'"
     $menu = Send @{ op = "menu"; client = $client }
     if (-not ($menu.reply.menu | Where-Object { $_.id -eq "settings" })) { throw "no menu" }
     Send @{ op = "detach"; client = $client } | Out-Null
