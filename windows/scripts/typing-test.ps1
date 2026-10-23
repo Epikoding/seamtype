@@ -146,20 +146,23 @@ Write-Host "--- experiment: interim character"
 $env:ARASO_INTERIM = "1"
 Case "dkssud hello " "안녕 hello " $null | Out-Null
 Remove-Item Env:ARASO_INTERIM
-Write-Host "--- experiment: listed under English (US)"
-$env:ARASO_LANGID = "0409"
-& "$env:WINDIR\System32\regsvr32.exe" /s "$folder\ArasoTip.dll" | Out-Null
-Start-Sleep -Seconds 2
-$english = "0409:{6D6C7D5F-3B7F-4F0E-9A2C-417261736F01}{6D6C7D5F-3B7F-4F0E-9A2C-417261736F02}"
-[Keys]::InstallLayoutOrTip($english, 0) | Out-Null
-[Keys]::SetDefaultLayoutOrTip($english, 0) | Out-Null
-Set-WinDefaultInputMethodOverride -InputTip $english
-$script:language = "0409"
-Case "dkssud hello " "안녕 hello " $null | Out-Null
-Case "dkssud hello " "안녕 hello " $null "wpf" | Out-Null
-Remove-Item Env:ARASO_LANGID
+foreach ($language in @("0409", "0411")) {
+    Write-Host "--- experiment: listed under $language"
+    Get-Process ArasoHost -ErrorAction SilentlyContinue | Stop-Process -Force
+    Start-Process -FilePath "$folder\ArasoHost.exe" -ArgumentList "--server"
+    $env:ARASO_LANGID = $language
+    & "$env:WINDIR\System32\regsvr32.exe" /s "$folder\ArasoTip.dll" | Out-Null
+    $listed = "${language}:{6D6C7D5F-3B7F-4F0E-9A2C-417261736F01}{6D6C7D5F-3B7F-4F0E-9A2C-417261736F02}"
+    [Keys]::InstallLayoutOrTip($listed, 0) | Out-Null
+    [Keys]::SetDefaultLayoutOrTip($listed, 0) | Out-Null
+    Set-WinDefaultInputMethodOverride -InputTip $listed
+    Start-Sleep -Seconds 8
+    $script:language = $language
+    Case "dkssud hello " "안녕 hello " $null | Out-Null
+    Remove-Item Env:ARASO_LANGID
+}
 
-if (Test-Path $log) { Write-Host "--- araso.log"; Get-Content $log | Select-String -NotMatch "test down|up kept" | Select-Object -Last 150 | Out-Host }
+if (Test-Path $log) { Write-Host "--- araso.log"; Get-Content $log | Select-Object -Last 400 | Out-Host }
 reg query "HKCU\Software\Microsoft\CTF\TIP" /s 2>$null | Select-String -Pattern "6D6C7D5F" | Out-Host
 reg query "HKLM\Software\Microsoft\CTF\TIP\{6D6C7D5F-3B7F-4F0E-9A2C-417261736F01}" /s 2>$null | Select-Object -First 20 | Out-Host
 Get-WinUserLanguageList | Format-List | Out-Host

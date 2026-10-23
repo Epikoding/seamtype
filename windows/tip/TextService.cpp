@@ -270,7 +270,9 @@ bool TextService::HostTakes(WPARAM wParam, LPARAM lParam, bool up) {
     request.set("key", KeyJson(wParam, lParam));
     if (up) request.set("up", true);
     Json response;
-    bool taken = host_.Request(request, response, 200) && response["reply"]["handled"].asBool();
+    bool answered = host_.Request(request, response, 200);
+    bool taken = answered && response["reply"]["handled"].asBool();
+    if (Verbose() && !answered) Log("test: no answer from the host");
     asked_ = {true, wParam, lParam, GetTickCount(), taken};
     return taken;
 }
