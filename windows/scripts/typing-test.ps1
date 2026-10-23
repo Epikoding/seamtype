@@ -132,6 +132,11 @@ if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") {
     $created += $x64ok, $ownok
 }
 
+# A Store app (AppContainer) reaching the host: the pipe's security lets such apps in.
+$container = Start-Process -FilePath "$folder\ArasoHost.exe" -ArgumentList "--appcontainer-test" -Wait -PassThru
+Write-Host "AppContainer: $(if ($container.ExitCode -eq 0) { 'attached to the host' } else { "FAILED ($($container.ExitCode))" })"
+$created += $container.ExitCode -eq 0
+
 # Letters' scan codes on a US keyboard.
 $scans = @{}
 $rows = @(@("qwertyuiop", 0x10), @("asdfghjkl", 0x1E), @("zxcvbnm", 0x2C))
@@ -244,6 +249,10 @@ $results = @(
 # Reported, not required: switching the word just committed in a classic app, whose text Araso
 # edits only through Windows' compatibility layer.
 Case "hello " "ㅗ디ㅣㅐ " { Tap 0x38 } $classic | Out-Null
+# Reported, not required: a Korean 103-key keyboard's own scan codes for 한/영 (0xF2) and 한자
+# (0xF1), which Windows turns into VK_HANGUL and VK_HANJA only with that keyboard type set.
+Case "hello " "ㅗ디ㅣㅐ " { [Keys]::Key(0xF2, $false, $false); Start-Sleep -Milliseconds 200 } $classic | Out-Null
+Case "" "dkssud " { [Keys]::Key(0xF1, $false, $false); Start-Sleep -Milliseconds 200; Send-Keys "dkssud " } $classic | Out-Null
 
 Write-Host "machine: $env:PROCESSOR_ARCHITECTURE"
 if (Test-Path $log) { Write-Host "--- araso.log"; Get-Content $log | Select-String -NotMatch "scan code" | Select-Object -Last 400 | Out-Host }

@@ -6,6 +6,8 @@
 //   --selftest                   load every model through the bridge and exit 0 when all work
 //   --load-text-service          create the text service as TSF does (COM, in this process) and say
 //                                which DLL came: on ARM64 Windows, the forwarder's x64 build here
+//   --appcontainer-test          start this exe in an AppContainer (as a Store app runs) and exit 0
+//                                when that copy reached the host's pipe and attached (--attach-test)
 #include "../common/Common.h"
 #include "Bridge.h"
 #include "Server.h"
@@ -143,6 +145,63 @@ int LoadTextService() {
     return SUCCEEDED(hr) ? 0 : 1;
 }
 
+/// What a text service does first: open the host's pipe and attach. Exit 0 when it got a client id.
+int AttachTest() {
+    HANDLE pipe = CreateFileW(PipeName().c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING,
+                              FILE_FLAG_OVERLAPPED, nullptr);
+    if (pipe == INVALID_HANDLE_VALUE) return 10 + static_cast<int>(GetLastError() % 100);
+    DWORD mode = PIPE_READMODE_MESSAGE;
+    SetNamedPipeHandleState(pipe, &mode, nullptr, nullptr);
+    std::string answer;
+    bool ok = Transact(pipe, R"({"op":"attach","app":"appcontainer-test.exe","window":0,"pid":0})", answer, 5000);
+    CloseHandle(pipe);
+    if (!ok) return 2;
+    Json response = Json::parse(answer);
+    return response["reply"]["client"].asInt() ? 0 : 3;
+}
+
+/// Starts this exe with --attach-test in an AppContainer, as a Store app's text service runs.
+int AppContainerTest() {
+    using Create = HRESULT(WINAPI *)(PCWSTR, PCWSTR, PCWSTR, PSID_AND_ATTRIBUTES, DWORD, PSID *);
+    using Derive = HRESULT(WINAPI *)(PCWSTR, PSID *);
+    HMODULE userenv = LoadLibraryW(L"userenv.dll");
+    auto create = userenv ? reinterpret_cast<Create>(GetProcAddress(userenv, "CreateAppContainerProfile")) : nullptr;
+    auto derive = userenv ? reinterpret_cast<Derive>(GetProcAddress(userenv, "DeriveAppContainerSidFromAppContainerName")) : nullptr;
+    PSID sid = nullptr;
+    const wchar_t *name = L"Araso.PipeTest";
+    if (!create || !derive) return 20;
+    if (FAILED(create(name, L"Araso pipe test", L"Araso pipe test", nullptr, 0, &sid)) && FAILED(derive(name, &sid))) return 21;
+
+    SECURITY_CAPABILITIES capabilities = {};
+    capabilities.AppContainerSid = sid;
+    SIZE_T size = 0;
+    InitializeProcThreadAttributeList(nullptr, 1, 0, &size);
+    std::vector<char> buffer(size);
+    auto attributes = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(buffer.data());
+    InitializeProcThreadAttributeList(attributes, 1, 0, &size);
+    UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, &capabilities,
+                              sizeof capabilities, nullptr, nullptr);
+    STARTUPINFOEXW startup = {};
+    startup.StartupInfo.cb = sizeof startup;
+    startup.lpAttributeList = attributes;
+    wchar_t exe[MAX_PATH] = L"";
+    GetModuleFileNameW(nullptr, exe, MAX_PATH);
+    std::wstring command = L"\"" + std::wstring(exe) + L"\" --attach-test";
+    PROCESS_INFORMATION process = {};
+    DWORD code = 22;
+    if (CreateProcessW(exe, command.data(), nullptr, nullptr, FALSE, EXTENDED_STARTUPINFO_PRESENT, nullptr, nullptr,
+                       &startup.StartupInfo, &process)) {
+        WaitForSingleObject(process.hProcess, 15000);
+        GetExitCodeProcess(process.hProcess, &code);
+        CloseHandle(process.hThread);
+        CloseHandle(process.hProcess);
+    }
+    DeleteProcThreadAttributeList(attributes);
+    FreeSid(sid);
+    Log("appcontainer test: %s (%lu)", code == 0 ? "attached" : "FAILED", static_cast<unsigned long>(code));
+    return static_cast<int>(code);
+}
+
 }  // namespace
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
@@ -151,6 +210,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     if (Has(args, L"--register")) return Register(true);
     if (Has(args, L"--unregister")) return Register(false);
     if (Has(args, L"--load-text-service")) return LoadTextService();
+    if (Has(args, L"--attach-test")) return AttachTest();
+    if (Has(args, L"--appcontainer-test")) return AppContainerTest();
 
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     INITCOMMONCONTROLSEX controls = {sizeof controls, ICC_STANDARD_CLASSES | ICC_LISTVIEW_CLASSES | ICC_TAB_CLASSES |
