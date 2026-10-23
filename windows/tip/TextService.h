@@ -78,6 +78,14 @@ private:
     TfGuidAtom attrConverted_ = TF_INVALID_GUIDATOM;
     TfGuidAtom attrTarget_ = TF_INVALID_GUIDATOM;
     std::wstring app_;
+    /// The host's answer for the shortcut being pressed (`HostTakes`).
+    struct Asked {
+        bool valid = false;
+        WPARAM vk = 0;
+        LPARAM lParam = 0;
+        DWORD at = 0;
+        bool taken = false;
+    } asked_;
 
     /// What a key's edit session found and did.
     struct KeyResult {

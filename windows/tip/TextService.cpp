@@ -257,12 +257,18 @@ bool TextService::IsShortcut(WPARAM vk) const {
     return GetKeyState(VK_CONTROL) < 0 || GetKeyState(VK_MENU) < 0 || GetKeyState(VK_LWIN) < 0 || GetKeyState(VK_RWIN) < 0;
 }
 
+/// Asked once per key: OnTestKeyDown may come more than once for one key (a peek, then the real
+/// thing) and OnKeyDown follows it; they all get the first answer.
 bool TextService::HostTakes(WPARAM wParam, LPARAM lParam) {
+    DWORD now = GetTickCount();
+    if (asked_.valid && asked_.vk == wParam && asked_.lParam == lParam && now - asked_.at < 1000) return asked_.taken;
     Json request = Json::object();
     request.set("op", "test");
     request.set("key", KeyJson(wParam, lParam));
     Json response;
-    return host_.Request(request, response, 200) && response["reply"]["handled"].asBool();
+    bool taken = host_.Request(request, response, 200) && response["reply"]["handled"].asBool();
+    asked_ = {true, wParam, lParam, now, taken};
+    return taken;
 }
 
 STDMETHODIMP TextService::OnTestKeyDown(ITfContext *, WPARAM wParam, LPARAM lParam, BOOL *eaten) {
@@ -273,7 +279,10 @@ STDMETHODIMP TextService::OnTestKeyDown(ITfContext *, WPARAM wParam, LPARAM lPar
 STDMETHODIMP TextService::OnKeyDown(ITfContext *context, WPARAM wParam, LPARAM lParam, BOOL *eaten) {
     *eaten = FALSE;
     if (!Takes(wParam, true)) return S_OK;
-    if (IsShortcut(wParam) && !HostTakes(wParam, lParam)) return S_OK;
+    bool shortcut = IsShortcut(wParam);
+    bool taken = !shortcut || HostTakes(wParam, lParam);
+    asked_.valid = false; // the key is done with: the next press asks again
+    if (!taken) return S_OK;
     // A modifier held down repeats: only its first press counts.
     if (IsModifier(wParam) && (lParam & (1 << 30))) return S_OK;
     HandleKey(context, wParam, lParam, "key", eaten);
