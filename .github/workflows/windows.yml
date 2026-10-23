@@ -171,10 +171,15 @@ jobs:
           gh release upload $tag build/Araso-Setup.exe "build/Araso-Setup-$env:ARASO_VERSION.exe" --clobber --repo ${{ github.repository }}
 
   typing:
-    # Real key events into Notepad through the installed input method.
+    # Real key events into a WPF TextBox and Notepad through the installed input method; on ARM64
+    # Windows those apps load the ARM64 text service (the installer registers it there).
     needs: package
-    runs-on: windows-latest
-    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-latest, windows-11-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
