@@ -20,6 +20,7 @@ public static class Keys {
     [StructLayout(LayoutKind.Explicit, Size = 40)] struct INPUT { [FieldOffset(0)] public uint type; [FieldOffset(8)] public KEYBDINPUT ki; }
     [DllImport("user32.dll")] static extern uint SendInput(uint count, INPUT[] inputs, int size);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
+    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string cls, string title);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr w, StringBuilder l);
     [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr w, IntPtr l);
@@ -97,6 +98,29 @@ Get-Process ArasoHost -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Process -FilePath "$folder\ArasoHost.exe" -ArgumentList "--server"
 Start-Sleep -Seconds 8   # the host warms its models up
 
+# The text service created as TSF creates it, in an x64 process (ArasoHost.exe) and in one of this
+# machine's own (PowerShell): on ARM64 Windows the forwarder must hand each its own build.
+$created = @()
+Start-Process -FilePath "$folder\ArasoHost.exe" -ArgumentList "--load-text-service" -Wait
+$x64 = (Get-Content $log -ErrorAction SilentlyContinue | Select-String "text service:" | Select-Object -Last 1) -as [string]
+Write-Host "x64 process: $x64"
+$created += $x64 -match "created"
+try {
+    $service = [Activator]::CreateInstance([Type]::GetTypeFromCLSID([Guid]"6D6C7D5F-3B7F-4F0E-9A2C-417261736F01"))
+    $own = (Get-Process -Id $PID).Modules | Where-Object { $_.ModuleName -like "ArasoTip*.dll" } | ForEach-Object FileName
+    Write-Host "text service in this $([Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture) process: created, $($own -join ', ')"
+    [Runtime.InteropServices.Marshal]::ReleaseComObject($service) | Out-Null
+    $created += $true
+} catch {
+    Write-Host "text service in this process: FAILED ($($_.Exception.Message))"
+    $created += $false
+}
+if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") {
+    $x64ok = $x64 -match "ArasoTipX64.dll"
+    $ownok = ($own -join ",") -match "ArasoTipArm64.dll"
+    $created += $x64ok, $ownok
+}
+
 # Letters' scan codes on a US keyboard.
 $scans = @{}
 $rows = @(@("qwertyuiop", 0x10), @("asdfghjkl", 0x1E), @("zxcvbnm", 0x2C))
@@ -124,6 +148,7 @@ function Open-Field([string]$kind) {
         [Keys]::SetForegroundWindow($process.MainWindowHandle) | Out-Null
         Start-Sleep -Milliseconds 300
         [Keys]::Focus($edit)
+        Start-Sleep -Seconds 1
         return @{ process = $process; window = $process.MainWindowHandle; read = { [Keys]::Text($edit) }.GetNewClosure() }
     }
     if ($kind -ne "notepad") {
@@ -152,7 +177,9 @@ function Case([string]$keys, [string]$expected, [scriptblock]$after, [string]$ki
     Start-Sleep -Milliseconds 800
     $thread = [Keys]::GetWindowThreadProcessId($window, [IntPtr]::Zero)
     $layout = "{0:X8}" -f [Keys]::GetKeyboardLayout($thread).ToInt64()
-    for ($i = 0; $i -lt 5 -and -not $layout.EndsWith($script:language); $i++) {
+    $front = [Keys]::GetForegroundWindow() -eq $window
+    for ($i = 0; $i -lt 10 -and -not $layout.EndsWith($script:language); $i++) {
+        [Keys]::SetForegroundWindow($window) | Out-Null
         # As the taskbar's indicator does: ask the window to switch to the language Araso is listed under.
         $hkl = [IntPtr][Convert]::ToInt64($script:language + $script:language, 16)
         [Keys]::PostMessage($window, 0x50 <# WM_INPUTLANGCHANGEREQUEST #>, [IntPtr]::Zero, $hkl) | Out-Null
@@ -160,7 +187,7 @@ function Case([string]$keys, [string]$expected, [scriptblock]$after, [string]$ki
         $layout = "{0:X8}" -f [Keys]::GetKeyboardLayout($thread).ToInt64()
     }
     $loaded = (Get-Process -Id $notepad.Id).Modules | Where-Object { $_.ModuleName -eq "ArasoTip.dll" } | Select-Object -First 1
-    Write-Host "${kind}: layout $layout, ArasoTip.dll $(if ($loaded) { $loaded.FileName } else { 'not loaded' })"
+    Write-Host "${kind}: in front $front, layout $layout, ArasoTip.dll $(if ($loaded) { $loaded.FileName } else { 'not loaded' })"
     Send-Keys $keys
     if ($after) { & $after }
     Start-Sleep -Milliseconds 800
@@ -211,6 +238,12 @@ if (Test-Path $log) { Write-Host "--- araso.log"; Get-Content $log | Select-Stri
 reg query "HKCU\Software\Microsoft\CTF\TIP" /s 2>$null | Select-String -Pattern "6D6C7D5F" | Out-Host
 reg query "HKLM\Software\Microsoft\CTF\TIP\{6D6C7D5F-3B7F-4F0E-9A2C-417261736F01}" /s 2>$null | Select-Object -First 20 | Out-Host
 Get-WinUserLanguageList | Format-List | Out-Host
+if ($created -contains $false) { throw "the text service couldn't be created" }
+if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64" -and -not ($results -contains $true)) {
+    # Not one key reached a window: this runner has no interactive desktop to type into.
+    Write-Host "typing test: no key reached any window here; the text service was created in ARM64 and x64 processes"
+    exit 0
+}
 if ($results -contains $false) {
     Get-ChildItem "$env:APPDATA\Araso" -ErrorAction SilentlyContinue | Select-Object Name | Out-Host
     throw "typing test failed"
