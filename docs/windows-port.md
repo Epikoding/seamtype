@@ -91,10 +91,14 @@ new. This file maps each macOS piece to its Windows one and says where the two d
 - What CI checks (`windows/scripts/typing-test.ps1`, on `windows-latest` and `windows-11-arm`):
   real key events into a WPF TextBox, Notepad's Edit control and the settings window's Try Typing
   (Korean, English, a switch while typing and after a word, the pause tap, and 한/영 and 한자 as
-  `VK_HANGUL`/`VK_HANJA`); on ARM64, where the runner has no desktop to type into, the text service
-  created through COM in an ARM64 and an x64 process (`ArasoHost.exe --load-text-service`).
-  Not yet checked: a real Korean keyboard's keys, typing on ARM64, and Store (AppContainer) apps
-  reaching the pipe.
+  `VK_HANGUL`/`VK_HANJA`, and 한/영's own scan code); a process in an AppContainer, as a Store
+  app's text service runs, attaching to the host (`ArasoHost.exe --appcontainer-test`); and on
+  ARM64, where the runner has no desktop to type into, the text service created through COM in an
+  ARM64 and an x64 process (`ArasoHost.exe --load-text-service`).
+  Not yet checked: a real Korean keyboard, and typing on ARM64 hardware.
+- In a classic app, the word and its Space reach the Edit control a moment after they go in
+  (CUAS posts them), so a switch key pressed within a few tens of milliseconds of the Space finds
+  the text before the caret not yet the word and doesn't switch it; a moment later it does.
 
 ## Building
 
