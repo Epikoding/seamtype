@@ -165,28 +165,31 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
         }
         panel.contentView?.setAccessibilityLabel(spoken)
 
-        // The other rows go and the list closes in on the chosen one, keeping the edge by the word.
+        let row = rows[index]
+        let outcome = label(text, size: 13)
+        outcome.font = .systemFont(ofSize: 13, weight: .semibold)
+        outcome.frame = NSRect(x: row.text.frame.minX, y: (rowHeight - outcome.fittingSize.height) / 2,
+                               width: ceil(outcome.fittingSize.width) + 2, height: outcome.fittingSize.height)
+
+        // The other rows go and the list closes in on the chosen one, keeping the edge by the word,
+        // as wide as the outcome needs.
         let one = rowHeight + inset * 2
         let frame = panel.frame
-        let folded = NSRect(x: frame.minX, y: above ? frame.minY : frame.maxY - one, width: frame.width, height: one)
-        let row = rows[index]
+        let width = max(row.view.frame.width, outcome.frame.maxX + 10)
+        let folded = NSRect(x: frame.minX, y: above ? frame.minY : frame.maxY - one, width: width + inset * 2, height: one)
         animate(0.12, nil, {
             for (i, other) in rows.enumerated() where i != index { other.view.animator().alphaValue = 0 }
         })
         animate(0.22, ease, {
             panel.animator().setFrame(folded, display: true)
-            row.view.animator().frame = rowFrame(0, width: row.view.frame.width)
-            highlight?.animator().frame = rowFrame(0, width: row.view.frame.width)
+            row.view.animator().frame = rowFrame(0, width: width)
+            highlight?.animator().frame = rowFrame(0, width: width)
         })
 
         // Then the row says it: the tag gives way to the icon, the reading to the outcome.
         let icon = NSImageView(image: NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 11, weight: .semibold)) ?? NSImage())
         icon.frame = NSRect(x: row.tag.frame.midX - 7, y: (rowHeight - 14) / 2, width: 14, height: 14)
-        let outcome = label(text, size: 13)
-        outcome.font = .systemFont(ofSize: 13, weight: .semibold)
-        outcome.frame = NSRect(x: row.text.frame.minX, y: (rowHeight - outcome.fittingSize.height) / 2,
-                               width: outcome.fittingSize.width + 2, height: outcome.fittingSize.height)
         let on = highlight != nil
         icon.contentTintColor = on ? .alternateSelectedControlTextColor : .controlAccentColor
         outcome.textColor = on ? .alternateSelectedControlTextColor : .labelColor
