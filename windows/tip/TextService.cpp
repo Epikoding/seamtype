@@ -655,6 +655,22 @@ void TextService::MoveCaretToEnd(TfEditCookie cookie, ITfContext *context, ITfRa
     caret->Release();
 }
 
+/// The composition's last character selected as an interim character (a Korean input method's
+/// block caret). ARASO_INTERIM: an experiment of the typing test.
+void TextService::SelectLastAsInterim(TfEditCookie cookie, ITfContext *context, ITfRange *range) {
+    ITfRange *last = nullptr;
+    if (FAILED(range->Clone(&last)) || !last) return;
+    LONG moved = 0;
+    last->Collapse(cookie, TF_ANCHOR_END);
+    last->ShiftStart(cookie, -1, &moved, nullptr);
+    TF_SELECTION selection = {};
+    selection.range = last;
+    selection.style.ase = TF_AE_NONE;
+    selection.style.fInterimChar = TRUE;
+    context->SetSelection(cookie, 1, &selection);
+    last->Release();
+}
+
 void TextService::EndComposition(TfEditCookie cookie) {
     if (!composition_) return;
     ITfRange *range = nullptr;
@@ -723,7 +739,11 @@ void TextService::ApplyOps(TfEditCookie cookie, ITfContext *context, const Json 
                         EndComposition(cookie);
                     } else {
                         ApplyAttributes(cookie, context, range, converting);
-                        MoveCaretToEnd(cookie, context, range);
+                        if (std::getenv("ARASO_INTERIM")) {
+                            SelectLastAsInterim(cookie, context, range);
+                        } else {
+                            MoveCaretToEnd(cookie, context, range);
+                        }
                         range->Release();
                     }
                 }

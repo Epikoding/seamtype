@@ -1,4 +1,5 @@
 // The COM server: the class factory, and registration as a Korean keyboard text service.
+#include <cstdlib>
 #include "TextService.h"
 #include "resource.h"
 
@@ -94,6 +95,17 @@ const GUID *const kCategories[] = {
     &kTfCatTipcapSystraySupport,
 };
 
+/// The language the profile is listed under: Korean; ARASO_LANGID (hex) for the typing test's
+/// experiments.
+LANGID ProfileLanguage() {
+    char value[16] = "";
+    if (GetEnvironmentVariableA("ARASO_LANGID", value, sizeof value)) {
+        LANGID langid = static_cast<LANGID>(std::strtoul(value, nullptr, 16));
+        if (langid) return langid;
+    }
+    return kLangId;
+}
+
 bool RegisterProfile() {
     std::wstring icon = ModulePath();
     std::wstring name = L"Araso";
@@ -102,7 +114,7 @@ bool RegisterProfile() {
                                   kIID_ITfInputProcessorProfileMgr, reinterpret_cast<void **>(&profiles));
     if (FAILED(hr)) return false;
     // The icon is the first in the DLL (index 0).
-    hr = profiles->RegisterProfile(kClsidTextService, kLangId, kGuidProfile, name.c_str(), static_cast<ULONG>(name.size()),
+    hr = profiles->RegisterProfile(kClsidTextService, ProfileLanguage(), kGuidProfile, name.c_str(), static_cast<ULONG>(name.size()),
                                    icon.c_str(), static_cast<ULONG>(icon.size()), 0, nullptr, 0, TRUE, 0);
     profiles->Release();
     return SUCCEEDED(hr);
@@ -112,7 +124,7 @@ void UnregisterProfile() {
     ITfInputProcessorProfileMgr *profiles = nullptr;
     if (SUCCEEDED(CoCreateInstance(kClsidTfInputProcessorProfiles, nullptr, CLSCTX_INPROC_SERVER,
                                    kIID_ITfInputProcessorProfileMgr, reinterpret_cast<void **>(&profiles)))) {
-        profiles->UnregisterProfile(kClsidTextService, kLangId, kGuidProfile, 0);
+        profiles->UnregisterProfile(kClsidTextService, ProfileLanguage(), kGuidProfile, 0);
         profiles->Release();
     }
 }

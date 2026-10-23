@@ -45,6 +45,7 @@ public static class Keys {
 }
 "@
 
+$script:language = "0412"
 $tip = "0412:{6D6C7D5F-3B7F-4F0E-9A2C-417261736F01}{6D6C7D5F-3B7F-4F0E-9A2C-417261736F02}"
 # Only the installer is waited for: -Wait would also wait for the host it starts, which stays.
 # (Not $installer: PowerShell's names ignore case, and the [string] parameter would take the process.)
@@ -84,7 +85,8 @@ function Open-Field([string]$kind) {
         $out = Join-Path $env:TEMP "araso-wpf.txt"
         Remove-Item $out -ErrorAction SilentlyContinue
         $process = Start-Process powershell -ArgumentList "-STA", "-NoProfile", "-File", "$PSScriptRoot\wpf-field.ps1", $out -PassThru
-        for ($i = 0; $i -lt 40 -and $process.MainWindowHandle -eq [IntPtr]::Zero; $i++) { Start-Sleep -Milliseconds 250; $process.Refresh() }
+        for ($i = 0; $i -lt 60 -and $process.MainWindowHandle -eq [IntPtr]::Zero; $i++) { Start-Sleep -Milliseconds 250; $process.Refresh() }
+        Start-Sleep -Seconds 2 # WPF draws, then focuses the box
         return @{ process = $process; window = $process.MainWindowHandle; read = { if (Test-Path $out) { [IO.File]::ReadAllText($out) } else { "" } }.GetNewClosure() }
     }
     $process = Start-Process notepad -PassThru
@@ -105,9 +107,10 @@ function Case([string]$keys, [string]$expected, [scriptblock]$after, [string]$ki
     Start-Sleep -Milliseconds 800
     $thread = [Keys]::GetWindowThreadProcessId($window, [IntPtr]::Zero)
     $layout = "{0:X8}" -f [Keys]::GetKeyboardLayout($thread).ToInt64()
-    if (-not $layout.EndsWith("0412")) {
-        # As the taskbar's indicator does: ask the window to switch to Korean, whose input method is Araso.
-        [Keys]::PostMessage($window, 0x50 <# WM_INPUTLANGCHANGEREQUEST #>, [IntPtr]::Zero, [IntPtr]0x04120412) | Out-Null
+    for ($i = 0; $i -lt 5 -and -not $layout.EndsWith($script:language); $i++) {
+        # As the taskbar's indicator does: ask the window to switch to the language Araso is listed under.
+        $hkl = [IntPtr][Convert]::ToInt64($script:language + $script:language, 16)
+        [Keys]::PostMessage($window, 0x50 <# WM_INPUTLANGCHANGEREQUEST #>, [IntPtr]::Zero, $hkl) | Out-Null
         Start-Sleep -Milliseconds 800
         $layout = "{0:X8}" -f [Keys]::GetKeyboardLayout($thread).ToInt64()
     }
@@ -136,7 +139,27 @@ $results = @(
     # Right Ctrl tapped alone pauses (0x1D extended): keys then go in as typed.
     (Case "" "dkssud " { Tap 0x1D; Send-Keys "dkssud " })
 )
-if (Test-Path $log) { Write-Host "--- araso.log"; Get-Content $log | Select-Object -Last 150 | Out-Host }
+# Experiments, reported but not required: Notepad ends every composition at once (CUAS). Is it
+# the caret (a Korean input method selects its last character as an interim one), or the language
+# Araso is listed under?
+Write-Host "--- experiment: interim character"
+$env:ARASO_INTERIM = "1"
+Case "dkssud hello " "안녕 hello " $null | Out-Null
+Remove-Item Env:ARASO_INTERIM
+Write-Host "--- experiment: listed under English (US)"
+$env:ARASO_LANGID = "0409"
+& "$env:WINDIR\System32\regsvr32.exe" /s "$folder\ArasoTip.dll" | Out-Null
+Start-Sleep -Seconds 2
+$english = "0409:{6D6C7D5F-3B7F-4F0E-9A2C-417261736F01}{6D6C7D5F-3B7F-4F0E-9A2C-417261736F02}"
+[Keys]::InstallLayoutOrTip($english, 0) | Out-Null
+[Keys]::SetDefaultLayoutOrTip($english, 0) | Out-Null
+Set-WinDefaultInputMethodOverride -InputTip $english
+$script:language = "0409"
+Case "dkssud hello " "안녕 hello " $null | Out-Null
+Case "dkssud hello " "안녕 hello " $null "wpf" | Out-Null
+Remove-Item Env:ARASO_LANGID
+
+if (Test-Path $log) { Write-Host "--- araso.log"; Get-Content $log | Select-String -NotMatch "test down|up kept" | Select-Object -Last 150 | Out-Host }
 reg query "HKCU\Software\Microsoft\CTF\TIP" /s 2>$null | Select-String -Pattern "6D6C7D5F" | Out-Host
 reg query "HKLM\Software\Microsoft\CTF\TIP\{6D6C7D5F-3B7F-4F0E-9A2C-417261736F01}" /s 2>$null | Select-Object -First 20 | Out-Host
 Get-WinUserLanguageList | Format-List | Out-Host

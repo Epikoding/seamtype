@@ -114,6 +114,7 @@ private:
     void ClearAttributes(TfEditCookie cookie, ITfContext *context, ITfRange *range);
     void EndComposition(TfEditCookie cookie);
     void MoveCaretToEnd(TfEditCookie cookie, ITfContext *context, ITfRange *range);
+    void SelectLastAsInterim(TfEditCookie cookie, ITfContext *context, ITfRange *range);
     ITfRange *RangeAt(TfEditCookie cookie, ITfContext *context, LONG start, LONG length);
     /// Sends a request whose answer carries edits, makes them and tells the host where things are.
     bool Exchange(TfEditCookie cookie, ITfContext *context, Json request, bool &handled, bool *replay = nullptr);
