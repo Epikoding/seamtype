@@ -258,15 +258,14 @@ doesn't, so a stray switch doesn't do much. It is forgotten after 30 days unless
 that way again. Correct the same keys the same way a second time and Araso always writes them so, also with a
 particle after them (remember `ghostty` and you get `ghostty에`);
 switching a word back to Araso's own guess forgets it, and switching a remembered word to yet another
-reading moves the memory there the second time. Each correction shows a pill under the word for a
-moment, where the conversion candidates and the switch key's list show; its icon pops up and the word
-unfolds beside it: a pencil and **Once** after the first correction, a check and **Remembered** when
-the word is learned (the icon in the accent color), and in gray an arrow back and **Forgotten** when
-switching back forgot it. In the
-switch key's list the marks sit on the language tags (`EN`, `KO`, `JA`): a filled pill on the reading
-the keys go in as when left alone, at first the one Araso picks, moving to the one it remembers
-(corrected twice, or a word you added yourself) and back when you switch back; a dotted ring on a
-reading corrected once, where one more correction moves the pill.
+reading moves the memory there the second time. The switch
+key's list has three marks: a sparkle (✦) at the end of the reading Araso picks, a filled pill on the
+language tag (`EN`, `KO`, `JA`) of the one the dictionary remembers (corrected twice, or a word you
+added yourself), and a dotted ring on one corrected once. Left alone, the keys go in as the pill's
+reading, or the sparkle's when there is no pill. The key after a correction folds the list to the
+chosen row, which says what happened for a moment: a pencil and **Once** after the first correction,
+a check and **Remembered** when the word is learned, Araso's sparkle and **Automatic** when switching
+back to Araso's pick forgot it.
 To tell whether a word went in because of the dictionary, open **Changed by the Dictionary** in the
 input menu: it lists the last five words the dictionary decided, as `ghostty → English`, and choosing
 one forgets it (the list is kept only until the input method restarts, and never saved). If a word

@@ -88,8 +88,7 @@ final class InputController: IMKInputController {
         MainActor.assumeIsolated {
             session.commit(client: textInput(sender).map(textClient))
             candidatesWindow?.hide()
-            ReadingsHUD.hide()
-            LearnedHUD.hide()
+            ReadingsHUD.hide(force: true)
             Runtime.shared.converter?.save()
         }
         super.deactivateServer(sender)
@@ -99,8 +98,7 @@ final class InputController: IMKInputController {
         MainActor.assumeIsolated {
             session.commitForNewContext(client: textInput(sender).map(textClient))
             candidatesWindow?.hide()
-            ReadingsHUD.hide()
-            LearnedHUD.hide()
+            ReadingsHUD.hide(force: true)
         }
     }
 
@@ -235,19 +233,17 @@ final class InputController: IMKInputController {
         log.debug("handle switchTap handled=\(handled) app=\(self.session.app ?? "?", privacy: .public)")
     }
 
-    /// The readings a switch key just went through, under the word, put away on any other key;
-    /// and a correction that just stuck, said for a moment.
+    /// The readings a switch key just went through, under the word, put away on any other key
+    /// unless it made a correction stick: then the list says so for a moment.
     @MainActor private func syncCaretPanels(_ client: IMKTextInput) {
         if let readings = session.readings {
-            LearnedHUD.hide()
             let marked = client.markedRange()
             let typing = marked.location != NSNotFound && marked.length > 0
             ReadingsHUD.show(readings, caret: typing ? caretRect(client) : wordRect ?? caretRect(client))
+        } else if let learned = session.learned {
+            ReadingsHUD.settle(learned, word: learnedRect(learned) ?? caretRect(client))
         } else {
             ReadingsHUD.hide()
-        }
-        if let learned = session.learned {
-            LearnedHUD.show(learned, word: learnedRect(learned) ?? caretRect(client))
         }
     }
 
@@ -303,8 +299,7 @@ final class InputController: IMKInputController {
     /// Pauses or resumes this text field, and says so under the caret.
     @MainActor private func togglePause(client: IMKTextInput?) {
         session.togglePause(client: client.map(textClient))
-        ReadingsHUD.hide()
-        LearnedHUD.hide()
+        ReadingsHUD.hide(force: true)
         PauseHUD.show(paused: session.paused, caret: client.map(caretRect) ?? .zero)
         log.info("paused=\(self.session.paused) app=\(self.session.app ?? "?", privacy: .public)")
     }

@@ -119,10 +119,12 @@ public final class InputSession {
         /// Each reading's language, for its tag in the list.
         public let languages: [Language]
         public let selected: Int
-        /// The reading the keys go in as when left alone: Araso's own, or the dictionary's when it
-        /// has one that wins (learned for good or added by hand). Remembering a word moves it there;
-        /// switching back to Araso's reading moves it back.
-        public var pick: Int? = nil
+        /// Araso's own reading, as if the keys had never been corrected, whatever the dictionary
+        /// says: the one switching back to forgets a remembered word.
+        public var own: Int? = nil
+        /// The reading the dictionary remembers, learned for good or added by hand: the keys go in
+        /// as it when left alone, over Araso's own.
+        public var remembered: Int? = nil
         /// The reading the keys were corrected to once: the engine leans to it, and choosing it
         /// again learns it for good.
         public var once: Int? = nil
@@ -337,7 +339,7 @@ public final class InputSession {
         if switchesLanguage, keys.isEmpty, let pending {
             if let changed = cycle(pending, client: client) {
                 lastCommit = changed
-                readings = readings(of: changed.keys, as: changed.language, pick: changed.decided, rendered: committedReading)
+                readings = readings(of: changed.keys, as: changed.language, decided: changed.decided, rendered: committedReading)
                 return true
             }
         }
@@ -428,7 +430,7 @@ public final class InputSession {
             forcedByUser = true
             if next != .japanese { dropNMarker() }
             updatePreview(client)
-            readings = readings(of: keys, as: next, pick: committedLanguage()) { _, language in self.rendering(as: language) }
+            readings = readings(of: keys, as: next, decided: committedLanguage()) { _, language in self.rendering(as: language) }
             return true
 
         case .printable(let ch):
@@ -1248,14 +1250,19 @@ public final class InputSession {
 
     /// The switch key's readings for `keys`, `language` selected; nil when there is nothing to
     /// choose between.
-    /// `pick` is the reading Araso gave the keys before any switch.
-    private func readings(of keys: String, as language: Language, pick: Language,
+    /// `decided` is the reading the keys got before any switch: Araso's own unless the dictionary
+    /// has them, then asked again without it, as the dictionary does when a switch goes back.
+    private func readings(of keys: String, as language: Language, decided: Language,
                           rendered: (String, Language) -> String) -> Readings? {
         let cycle = language.cycle(for: keys, japanese: japaneseEnabled, splits: engineSplits(keys))
         guard cycle.count > 1, let selected = cycle.firstIndex(of: language) else { return nil }
+        let remembered = engine.rememberedLanguage(keys, app: app)
+        let once = engine.correctedOnce(keys, app: app)
+        let own = remembered == nil && once == nil ? decided
+            : engine.ownDecision(keys, context: DecisionContext(app: app)).language
         return Readings(texts: cycle.map { rendered(keys, $0) }, languages: cycle, selected: selected,
-                        pick: cycle.firstIndex(of: pick),
-                        once: engine.correctedOnce(keys, app: app).flatMap { cycle.firstIndex(of: $0) })
+                        own: cycle.firstIndex(of: own), remembered: remembered.flatMap { cycle.firstIndex(of: $0) },
+                        once: once.flatMap { cycle.firstIndex(of: $0) })
     }
 
     /// The word being composed as the marked text, with its boundary while it is held.

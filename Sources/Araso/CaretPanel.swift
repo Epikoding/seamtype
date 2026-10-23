@@ -76,44 +76,56 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
 /// (`InputSession.readings`). Rows fall in one after another; on the next switch the highlight
 /// springs to its row, and only the highlight moves: the readings stay still, so fast presses
 /// leave them readable. Everything is over in about 0.2 s, and the next key cuts it short: the
-/// user is in the middle of typing.
+/// user is in the middle of typing, unless that key made the dictionary take the correction
+/// (`InputSession.learned`): then the list folds to the chosen row, which says what happened.
 @MainActor enum ReadingsHUD {
     private static var panel: NSPanel?
     private static var shown: InputSession.Readings?
     private static var highlight: NSView?
-    private static var rows: [(view: NSView, tag: NSTextField, text: NSTextField)] = []
-    /// Marks on the readings' language tags: a filled pill under the one the keys go in as when
-    /// left alone (Araso's own, or the dictionary's once it remembers one, and Araso's again after
-    /// switching back), a dotted ring around one corrected once, which another correction moves the
-    /// pill to. Shapes, not colours, so they read on the highlight too.
+    private static var rows: [(view: NSView, tag: NSTextField, text: NSTextField, own: NSImageView?)] = []
+    /// Marks on the readings' language tags: a filled pill under the one the dictionary
+    /// remembers, which the keys go in as when left alone, a dotted ring around one corrected
+    /// once, which another correction makes the pill. Shapes, not colours, so they read on the
+    /// highlight too. Araso's own reading carries a sparkle at its end, whatever is remembered.
     private static var records: [(row: Int, layer: CAShapeLayer, pill: Bool)] = []
     /// Bumped on every show and hide, so a fade left from before stops.
     private static var generation = 0
     private static var hiding = false
+    /// Folded to the chosen row and saying what the correction did; the keys typed meanwhile
+    /// don't put it away.
+    private static var settling = false
+    /// The list is above the word, near the bottom of the screen: it folds toward its bottom.
+    private static var above = false
 
     private static let rowHeight: CGFloat = 24
     private static let inset: CGFloat = 3
     private static let gap: CGFloat = 4
+    private static let ownWidth: CGFloat = 12
+    private static let ease = CAMediaTimingFunction(controlPoints: 0.6, 0, 0.2, 1)
 
     /// `caret` is the word's line in screen coordinates; without one (`.zero`) nothing is shown,
     /// since a list away from the word says little.
     static func show(_ readings: InputSession.Readings, caret: NSRect) {
-        guard caret != .zero else { return hide() }
+        guard caret != .zero else { return hide(force: true) }
         generation += 1
-        if let panel, panel.isVisible, !hiding, let shown,
+        if let panel, panel.isVisible, !hiding, !settling, let shown,
            shown.texts == readings.texts, shown.languages == readings.languages {
             select(readings.selected, from: shown.selected)
         } else {
-            build(readings, caret: caret)
+            settling = false
+            build(Content(readings), caret: caret)
         }
         shown = readings
     }
 
-    static func hide() {
-        guard let panel, panel.isVisible, !hiding else { return }
+    /// Puts the list away; one saying what a correction did stays its moment unless `force`d
+    /// (the field lost focus, the input method paused).
+    static func hide(force: Bool = false) {
+        guard let panel, panel.isVisible, !hiding, force || !settling else { return }
         generation += 1
         let current = generation
         hiding = true
+        settling = false
         shown = nil
         animate(0.08, CAMediaTimingFunction(name: .easeIn), { panel.animator().alphaValue = 0 }) {
             guard current == generation else { return }
@@ -122,11 +134,127 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
         }
     }
 
+    /// The correction the dictionary just took: the list still up folds to the chosen row, its
+    /// tag turning to an icon and its reading to what happened: a pencil and "Once" after the
+    /// first correction, a check and "Remembered" once learned for good, Araso's sparkle and
+    /// "Automatic" when a switch back to Araso's own reading forgot the word. Without a list up
+    /// (`word`, the word's line, places it) a row like it shows on its own.
+    static func settle(_ learned: InputSession.Learned, word: NSRect) {
+        let index: Int
+        if let panel, panel.isVisible, !hiding, !settling, let shown, rows.indices.contains(shown.selected) {
+            index = shown.selected
+        } else {
+            guard word != .zero else { return }
+            build(Content(texts: [learned.text], languages: [learned.language], selected: 0), caret: word)
+            index = 0
+        }
+        guard let panel else { return }
+        generation += 1
+        let current = generation
+        settling = true
+        shown = nil
+        let (symbol, text) = switch learned.learning {
+        case .once: ("pencil", L("Once"))
+        case .forGood: ("checkmark", L("Remembered"))
+        case .forgot: ("sparkles", L("Automatic"))
+        }
+        let spoken = switch learned.learning {
+        case .once: L("%@ → %@, once", learned.text, learned.language.displayName)
+        case .forGood: L("%@ → always %@", learned.text, learned.language.displayName)
+        case .forgot: L("%@, back to automatic", learned.text)
+        }
+        panel.contentView?.setAccessibilityLabel(spoken)
+
+        // The other rows go and the list closes in on the chosen one, keeping the edge by the word.
+        let one = rowHeight + inset * 2
+        let frame = panel.frame
+        let folded = NSRect(x: frame.minX, y: above ? frame.minY : frame.maxY - one, width: frame.width, height: one)
+        let row = rows[index]
+        animate(0.12, nil, {
+            for (i, other) in rows.enumerated() where i != index { other.view.animator().alphaValue = 0 }
+        })
+        animate(0.22, ease, {
+            panel.animator().setFrame(folded, display: true)
+            row.view.animator().frame = rowFrame(0, width: row.view.frame.width)
+            highlight?.animator().frame = rowFrame(0, width: row.view.frame.width)
+        })
+
+        // Then the row says it: the tag gives way to the icon, the reading to the outcome.
+        let icon = NSImageView(image: NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 11, weight: .semibold)) ?? NSImage())
+        icon.frame = NSRect(x: row.tag.frame.midX - 7, y: (rowHeight - 14) / 2, width: 14, height: 14)
+        let outcome = label(text, size: 13)
+        outcome.font = .systemFont(ofSize: 13, weight: .semibold)
+        outcome.frame = NSRect(x: row.text.frame.minX, y: (rowHeight - outcome.fittingSize.height) / 2,
+                               width: outcome.fittingSize.width + 2, height: outcome.fittingSize.height)
+        let on = highlight != nil
+        icon.contentTintColor = on ? .alternateSelectedControlTextColor : .controlAccentColor
+        outcome.textColor = on ? .alternateSelectedControlTextColor : .labelColor
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            guard current == generation else { return }
+            for new in [icon, outcome] as [NSView] {
+                new.alphaValue = 0
+                new.setFrameOrigin(NSPoint(x: new.frame.minX, y: new.frame.minY + 6))
+                row.view.addSubview(new)
+            }
+            let leaving: [NSView] = [row.tag, row.text] + (row.own.map { [$0] } ?? [])
+            for record in records where record.row == index { record.layer.opacity = 0 }
+            animate(0.2, ease, {
+                for old in leaving {
+                    old.animator().alphaValue = 0
+                    old.animator().setFrameOrigin(NSPoint(x: old.frame.minX, y: old.frame.minY - 6))
+                }
+                for new in [icon, outcome] as [NSView] {
+                    new.animator().alphaValue = 1
+                    new.animator().setFrameOrigin(NSPoint(x: new.frame.minX, y: new.frame.minY - 6))
+                }
+            })
+        }
+        // The highlight lets go, and the row reads as the list's own colours.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) {
+            guard current == generation else { return }
+            icon.contentTintColor = .controlAccentColor
+            outcome.textColor = .labelColor
+            animate(0.26, nil, { highlight?.animator().alphaValue = 0 })
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.9) {
+            guard current == generation else { return }
+            animate(0.22, nil, { panel.animator().alphaValue = 0 }) {
+                guard current == generation else { return }
+                panel.orderOut(nil)
+                settling = false
+            }
+        }
+    }
+
     private static func rowFrame(_ index: Int, width: CGFloat) -> NSRect {
         NSRect(x: inset, y: inset + CGFloat(index) * rowHeight, width: width, height: rowHeight)
     }
 
-    private static func build(_ readings: InputSession.Readings, caret: NSRect) {
+    /// What the list shows: the session's readings, or one reading for an outcome on its own.
+    private struct Content {
+        var texts: [String]
+        var languages: [Language]
+        var selected: Int
+        var own: Int?
+        var remembered: Int?
+        var once: Int?
+
+        init(texts: [String], languages: [Language], selected: Int) {
+            self.texts = texts
+            self.languages = languages
+            self.selected = selected
+        }
+
+        init(_ readings: InputSession.Readings) {
+            self.init(texts: readings.texts, languages: readings.languages, selected: readings.selected)
+            own = readings.own
+            remembered = readings.remembered
+            once = readings.once
+        }
+    }
+
+    private static func build(_ readings: Content, caret: NSRect) {
         hiding = false
         let panel = panel ?? CaretPanel.make(size: .zero)
         self.panel = panel
@@ -142,9 +270,10 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
         let textWidth = min(texts.map(\.fittingSize.width).max() ?? 0, 240)
         var recorded: [Int: Bool] = [:] // row: pill (else the ring of a reading corrected once)
         if let row = readings.once { recorded[row] = false }
-        if let row = readings.pick { recorded[row] = true }
+        if let row = readings.remembered { recorded[row] = true }
         recorded = recorded.filter { readings.texts.indices.contains($0.key) }
-        let rowWidth = max(8 + ceil(tagWidth) + 6 + ceil(textWidth) + 10, 96)
+        let own = readings.own.flatMap { readings.texts.indices.contains($0) ? $0 : nil }
+        let rowWidth = max(8 + ceil(tagWidth) + 6 + ceil(textWidth) + 10 + (own == nil ? 0 : ownWidth + 6), 96)
         let size = NSSize(width: rowWidth + inset * 2, height: CGFloat(texts.count) * rowHeight + inset * 2)
 
         let background = NSVisualEffectView(frame: NSRect(origin: .zero, size: size))
@@ -180,8 +309,16 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
                                 width: ceil(textWidth) + 2, height: text.fittingSize.height)
             row.addSubview(tag)
             row.addSubview(text)
+            var sparkle: NSImageView?
+            if index == own {
+                let image = NSImageView(image: NSImage(systemSymbolName: "sparkles", accessibilityDescription: L("Araso's choice"))?
+                    .withSymbolConfiguration(.init(pointSize: 10, weight: .medium)) ?? NSImage())
+                image.frame = NSRect(x: rowWidth - 10 - ownWidth, y: (rowHeight - ownWidth) / 2, width: ownWidth, height: ownWidth)
+                row.addSubview(image)
+                sparkle = image
+            }
             content.addSubview(row)
-            return (row, tag, text)
+            return (row, tag, text, sparkle)
         }
         records = recorded.map { row, pill in
             let tag = rows[row].tag
@@ -194,15 +331,16 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
             if !pill { layer.lineDashPattern = [0.01, 2.6] } // dots: round caps on near-empty dashes
             rows[row].view.layer?.insertSublayer(layer, at: 0)
             if pill { tag.font = .systemFont(ofSize: 11, weight: .semibold) }
-            tag.setAccessibilityLabel("\(tag.stringValue), \(L(pill ? "Goes in as" : "Corrected once"))")
+            tag.setAccessibilityLabel("\(tag.stringValue), \(L(pill ? "Remembered" : "Corrected once"))")
             return (row, layer, pill)
         }
         background.setAccessibilityRole(.list)
         background.setAccessibilityLabel(L("Readings, %@ selected", readings.texts[readings.selected]))
         panel.contentView = background
         color(selected: readings.selected)
-        panel.setFrame(NSRect(origin: CaretPanel.origin(for: size, caret: caret, gap: gap, centered: false), size: size),
-                       display: true)
+        let origin = CaretPanel.origin(for: size, caret: caret, gap: gap, centered: false)
+        above = origin.y > caret.minY
+        panel.setFrame(NSRect(origin: origin, size: size), display: true)
         panel.alphaValue = 1
         panel.orderFrontRegardless()
         dropIn()
@@ -246,6 +384,7 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
         for (i, row) in rows.enumerated() {
             row.text.textColor = i == selected ? .alternateSelectedControlTextColor : .labelColor
             row.tag.textColor = i == selected ? .alternateSelectedControlTextColor : .secondaryLabelColor
+            row.own?.contentTintColor = i == selected ? .alternateSelectedControlTextColor : .secondaryLabelColor
         }
         guard let appearance = panel?.contentView?.effectiveAppearance else { return }
         appearance.performAsCurrentDrawingAppearance {
@@ -272,181 +411,5 @@ private let springy = CAMediaTimingFunction(controlPoints: 0.3, 1.4, 0.5, 1)
         label.font = .systemFont(ofSize: size)
         label.lineBreakMode = .byTruncatingTail
         return label
-    }
-}
-
-/// A correction the dictionary just took (`InputSession.learned`), as a pill where the conversion
-/// candidates and the switch key's list show, from the same corner as the list it follows: one shape,
-/// told apart by icon and word, the icon in the accent color: a pencil and "Once" after the first
-/// correction, a check and "Remembered" once learned for good, and in gray an arrow back and
-/// "Forgotten" when a switch back to Araso's own reading forgot the word. The icon pops up first
-/// and the word unfolds beside it; it folds back before the pill goes.
-@MainActor enum LearnedHUD {
-    private static var panel: NSPanel?
-    private static var shown = 0
-
-    private static let height: CGFloat = 18
-    private static let padding: CGFloat = 7
-    private static let iconSize: CGFloat = 12
-    private static let spacing: CGFloat = 5
-    /// Room around the pill for its shadow.
-    private static let margin: CGFloat = 6
-    /// As far below the line as the candidate window is.
-    private static let gap: CGFloat = 4
-    private static let ease = CAMediaTimingFunction(controlPoints: 0.6, 0, 0.2, 1)
-
-    /// `word` is the word's line in screen coordinates.
-    static func show(_ learned: InputSession.Learned, word: NSRect) {
-        guard word != .zero else { return }
-        let (symbol, text) = switch learned.learning {
-        case .once: ("pencil", L("Once"))
-        case .forGood: ("checkmark", L("Remembered"))
-        case .forgot: ("arrow.uturn.backward", L("Forgotten"))
-        }
-        let font = NSFont.systemFont(ofSize: 11, weight: .semibold)
-        let textSize = (text as NSString).size(withAttributes: [.font: font])
-        let folded = padding + iconSize + padding
-        let full = padding + iconSize + spacing + ceil(textSize.width) + padding
-        let size = NSSize(width: full + margin * 2, height: height + margin * 2)
-        let panel = panel ?? CaretPanel.make(size: size)
-        self.panel = panel
-
-        let view = NSView(frame: NSRect(origin: .zero, size: size))
-        view.wantsLayer = true
-        view.setAccessibilityElement(true)
-        let spoken = switch learned.learning {
-        case .once: L("%@ → %@, once", learned.text, learned.language.displayName)
-        case .forGood: L("%@ → always %@", learned.text, learned.language.displayName)
-        case .forgot: L("%@, forgotten", learned.text)
-        }
-        view.setAccessibilityLabel(spoken)
-
-        // Where the list goes, from the same corner: under the word, or above it near the bottom
-        // of the screen.
-        var origin = CaretPanel.origin(for: size, caret: word, gap: gap - margin, centered: false)
-        origin.x -= margin
-        let above = origin.y > word.minY
-
-        // The pill's paper, border and shadow; inside it a clip that the word unfolds in. Both
-        // keep their left edge, the word's side, as they widen, and it pops up from the corner
-        // nearest the word.
-        let pill = CALayer()
-        pill.anchorPoint = CGPoint(x: 0, y: above ? 0 : 1)
-        pill.bounds = CGRect(x: 0, y: 0, width: full, height: height)
-        pill.position = CGPoint(x: margin, y: above ? margin : margin + height)
-        pill.cornerRadius = 5
-        pill.cornerCurve = .continuous
-        pill.borderWidth = 1
-        pill.shadowOpacity = 0.16
-        pill.shadowRadius = 3
-        pill.shadowOffset = CGSize(width: 0, height: -1)
-        let clip = CALayer()
-        clip.anchorPoint = .zero
-        clip.bounds = pill.bounds
-        clip.position = .zero
-        clip.cornerRadius = 5
-        clip.masksToBounds = true
-        let icon = CALayer()
-        icon.frame = CGRect(x: padding, y: (height - iconSize) / 2, width: iconSize, height: iconSize)
-        icon.contentsGravity = .resizeAspect
-        let label = CATextLayer()
-        let scale = NSScreen.screens.first { $0.frame.contains(word.origin) }?.backingScaleFactor ?? 2
-        label.contentsScale = scale
-        icon.contentsScale = scale
-        label.frame = CGRect(x: padding + iconSize + spacing, y: (height - ceil(textSize.height)) / 2,
-                             width: ceil(textSize.width) + 1, height: ceil(textSize.height))
-        view.effectiveAppearance.performAsCurrentDrawingAppearance {
-            let gone = learned.learning == .forgot
-            let tint: NSColor = gone ? .secondaryLabelColor : .controlAccentColor
-            pill.backgroundColor = NSColor.controlBackgroundColor.cgColor
-            pill.borderColor = NSColor.separatorColor.cgColor
-            let configuration = NSImage.SymbolConfiguration(pointSize: 10, weight: .bold)
-                .applying(NSImage.SymbolConfiguration(paletteColors: [tint]))
-            icon.contents = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-                .withSymbolConfiguration(configuration)
-            label.string = NSAttributedString(string: text, attributes: [
-                .font: font, .foregroundColor: gone ? NSColor.secondaryLabelColor : NSColor.labelColor,
-            ])
-        }
-        clip.addSublayer(icon)
-        clip.addSublayer(label)
-        pill.addSublayer(clip)
-        view.layer?.addSublayer(pill)
-        panel.contentView = view
-
-        panel.setFrame(NSRect(origin: origin, size: size), display: true)
-        panel.alphaValue = 1
-        panel.orderFrontRegardless()
-
-        if !reduceMotion {
-            let now = CACurrentMediaTime()
-            let grow = CABasicAnimation(keyPath: "transform.scale")
-            grow.fromValue = 0.6
-            grow.toValue = 1
-            grow.duration = 0.22
-            grow.timingFunction = springy
-            let appear = CABasicAnimation(keyPath: "opacity")
-            appear.fromValue = 0
-            appear.toValue = 1
-            appear.duration = 0.12
-            pill.add(grow, forKey: "grow")
-            pill.add(appear, forKey: "appear")
-            for layer in [pill, clip] {
-                layer.add(widen(from: folded, to: full, at: now + 0.2, duration: 0.26), forKey: "unfold")
-            }
-            label.add(fade(from: 0, to: 1, at: now + 0.2, duration: 0.2), forKey: "unfold")
-        }
-
-        shown += 1
-        let current = shown
-        DispatchQueue.main.asyncAfter(deadline: .now() + (learned.learning == .forgot ? 0.9 : 1.5)) {
-            guard current == shown else { return }
-            var fold = 0.0
-            if !reduceMotion {
-                // Folds back to the icon, then goes.
-                fold = 0.22
-                let now = CACurrentMediaTime()
-                for layer in [pill, clip] {
-                    layer.add(widen(from: full, to: folded, at: now, duration: fold), forKey: "fold")
-                }
-                label.add(fade(from: 1, to: 0, at: now, duration: 0.15), forKey: "fold")
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + fold) {
-                guard current == shown else { return }
-                animate(0.2, nil, { panel.animator().alphaValue = 0 }) {
-                    if current == shown { panel.orderOut(nil) }
-                }
-            }
-        }
-    }
-
-    static func hide() {
-        shown += 1
-        panel?.orderOut(nil)
-    }
-
-    private static func widen(from: CGFloat, to: CGFloat, at start: CFTimeInterval,
-                              duration: CFTimeInterval) -> CABasicAnimation {
-        let widen = CABasicAnimation(keyPath: "bounds.size.width")
-        widen.fromValue = from
-        widen.toValue = to
-        widen.beginTime = start
-        widen.duration = duration
-        widen.timingFunction = ease
-        widen.fillMode = .both
-        widen.isRemovedOnCompletion = false
-        return widen
-    }
-
-    private static func fade(from: CGFloat, to: CGFloat, at start: CFTimeInterval,
-                             duration: CFTimeInterval) -> CABasicAnimation {
-        let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = from
-        fade.toValue = to
-        fade.beginTime = start
-        fade.duration = duration
-        fade.fillMode = .both
-        fade.isRemovedOnCompletion = false
-        return fade
     }
 }

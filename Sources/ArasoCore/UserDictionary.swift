@@ -304,6 +304,11 @@ public final class DictionaryEngine: DecisionEngine, @unchecked Sendable {
         lock.withLock { entry(for: keys, app: app).flatMap { $0.strength == .weak ? $0.language : nil } }
     }
 
+    /// The language a winning entry gives the keys, learned for good or added by hand.
+    public func rememberedLanguage(_ keys: String, app: String?) -> Language? {
+        lock.withLock { entry(for: keys, app: app).flatMap { $0.wins ? $0.language : nil } }
+    }
+
     /// The reading the keys were switched to once and would be remembered as the next time:
     /// a weak entry's, or the one a remembered word was switched to (`Entry.next`).
     public func correctedOnce(_ keys: String, app: String?) -> Language? {

@@ -264,7 +264,7 @@
 "Changed by the Dictionary" = "사전이 바꾼 단어";
 "%@ → %@ · Forget" = "%@ → %@ · 잊기";
 "%@ → %@, once" = "%@ → %@, 한 번 고침";
-"%@, forgotten" = "%@, 잊음";
+"%@, back to automatic" = "%@, 자동으로 돌아감";
+"Automatic" = "자동으로";
+"Araso's choice" = "Araso가 고른 읽기";
 "Once" = "한 번";
-"Forgotten" = "잊음";
-"Goes in as" = "그냥 두면 이것";
