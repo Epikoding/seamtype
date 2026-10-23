@@ -1,0 +1,227 @@
+# The Windows input method (docs/windows-port.md): the Swift core and its tests on Windows, the
+# C++ text service and host with MSVC for every architecture, then everything staged together,
+# self-tested and packed into Araso-Setup.exe (an artifact). The C++ is also cross-compiled with zig
+# on Linux, as windows/scripts/check-cross.sh does on a Mac.
+#
+# On a v<version> tag the installer goes into the draft release that release.yml makes, as
+# Araso-Setup.exe and Araso-Setup-<version>.exe (the updater asks for the first).
+# Signing, when these are set (unsigned otherwise: the updater then opens the release page):
+#   secrets WINDOWS_SIGN_PFX (base64 of a .pfx), WINDOWS_SIGN_PASSWORD
+#   variable ARASO_WINDOWS_PUBLISHER: the certificate's subject name, which the updater requires
+name: Windows
+
+on:
+  push:
+    branches: [main, 'aimdevlee/windows-*']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  swift:
+    runs-on: windows-latest
+    steps:
+      # The data files are read as they are in the repository.
+      - run: git config --global core.autocrlf false
+      - uses: compnerd/gha-setup-swift@main
+        with:
+          branch: swift-6.4.1-release
+          tag: 6.4.1-RELEASE
+      - uses: actions/checkout@v4
+      - run: swift --version
+      - name: Build
+        run: swift build --build-tests
+      - name: Test
+        run: swift test
+      - name: Bridge (release)
+        run: swift build -c release --product ArasoBridge
+      - name: Collect the bridge, the Swift runtime and the data
+        shell: pwsh
+        run: |
+          $out = "build/swift"
+          New-Item -ItemType Directory -Force $out, "$out/Resources/ko.lproj" | Out-Null
+          Copy-Item .build/release/ArasoBridge.dll $out
+          # The Swift runtime the bridge needs, from the toolchain's redistributable folder.
+          $core = Get-ChildItem -Path "$env:LOCALAPPDATA\Programs\Swift", "$env:ProgramFiles\Swift", "C:\Library" -Recurse -Filter swiftCore.dll -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match 'Runtimes' -and $_.FullName -notmatch 'arm64|aarch64|i686|x86\\' } | Select-Object -First 1
+          if (-not $core) { throw "swiftCore.dll not found" }
+          Write-Host "runtime: $($core.DirectoryName)"
+          Get-ChildItem $core.DirectoryName -Filter *.dll | Copy-Item -Destination $out
+          Copy-Item Sources/ArasoCore/Data/*.txt "$out/Resources"
+          Copy-Item -Recurse .build/checkouts/AzooKeyKanaKanjiConverter/Sources/KanaKanjiConverterModuleWithDefaultDictionary/azooKey_dictionary_storage/Dictionary "$out/Resources/Dictionary"
+          Copy-Item Resources/ko.lproj/Localizable.strings, windows/Resources/ko.lproj/Windows.strings "$out/Resources/ko.lproj"
+          Get-ChildItem $out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: swift-x64
+          path: build/swift
+
+  cpp:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        arch: [x64, Win32, ARM64]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Version
+        shell: pwsh
+        run: |
+          $plist = Get-Content Resources/Info.plist -Raw
+          $version = [regex]::Match($plist, '<key>CFBundleShortVersionString</key>\s*<string>([^<]+)</string>').Groups[1].Value
+          "ARASO_VERSION=$version" >> $env:GITHUB_ENV
+      - name: Configure
+        # Quoted: PowerShell hands an unquoted -DNAME=0.2.2 to a program split at the first dot.
+        run: cmake -S windows -B build/windows -A ${{ matrix.arch }} "-DARASO_VERSION=${{ env.ARASO_VERSION }}" -DARASO_HOST=${{ matrix.arch == 'Win32' && 'OFF' || 'ON' }} "-DARASO_PUBLISHER=${{ vars.ARASO_WINDOWS_PUBLISHER }}"
+      - name: Build
+        run: cmake --build build/windows --config Release
+      - if: matrix.arch == 'ARM64'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64_arm64
+      - name: ARM64X forwarder
+        if: matrix.arch == 'ARM64'
+        shell: pwsh
+        run: windows/scripts/arm64x-forwarder.ps1 build/windows/Release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cpp-${{ matrix.arch }}
+          path: |
+            build/windows/Release/*.dll
+            build/windows/Release/*.exe
+
+  package:
+    needs: [swift, cpp]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: build/artifacts
+      - name: Stage
+        shell: pwsh
+        run: |
+          $stage = "build/stage"
+          New-Item -ItemType Directory -Force $stage, "$stage/x86", "$stage/arm64", "$stage/vim" | Out-Null
+          Copy-Item -Recurse build/artifacts/swift-x64/* $stage
+          Copy-Item build/artifacts/cpp-x64/ArasoHost.exe, build/artifacts/cpp-x64/ArasoTip.dll $stage
+          Copy-Item build/artifacts/cpp-Win32/ArasoTip.dll "$stage/x86"
+          # ARM64: the ARM64X forwarder as ArasoTip.dll, which both ARM64 and x64 apps load, beside
+          # the two builds it hands them to (windows/scripts/arm64x-forwarder.ps1).
+          Copy-Item build/artifacts/cpp-ARM64/ArasoTipForwarder.dll "$stage/arm64/ArasoTip.dll"
+          Copy-Item build/artifacts/cpp-ARM64/ArasoTip.dll "$stage/arm64/ArasoTipArm64.dll"
+          Copy-Item build/artifacts/cpp-x64/ArasoTip.dll "$stage/arm64/ArasoTipX64.dll"
+          Copy-Item scripts/vim/araso.lua, scripts/vim/araso.vim "$stage/vim"
+          # The Swift runtime needs the Visual C++ runtime, which a fresh Windows may not have: beside it.
+          foreach ($dll in 'vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll') {
+            Copy-Item "$env:WINDIR\System32\$dll" $stage
+          }
+          Get-ChildItem -Recurse $stage | Select-Object -First 80 FullName
+      - name: Sign the binaries
+        if: env.SIGN_PFX != ''
+        env:
+          SIGN_PFX: ${{ secrets.WINDOWS_SIGN_PFX }}
+          SIGN_PASSWORD: ${{ secrets.WINDOWS_SIGN_PASSWORD }}
+        shell: pwsh
+        run: |
+          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\sign.pfx", [Convert]::FromBase64String($env:SIGN_PFX))
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe | Where-Object { $_.FullName -match 'x64' } | Select-Object -Last 1
+          $files = 'ArasoHost.exe', 'ArasoTip.dll', 'x86\ArasoTip.dll', 'arm64\ArasoTip.dll', 'ArasoBridge.dll' | ForEach-Object { "build\stage\$_" }
+          & $signtool.FullName sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 /f "$env:RUNNER_TEMP\sign.pfx" /p $env:SIGN_PASSWORD $files
+          if ($LASTEXITCODE -ne 0) { throw "signing failed" }
+          "SIGNTOOL=$($signtool.FullName)" >> $env:GITHUB_ENV
+      - name: Self-test
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath build/stage/ArasoHost.exe -ArgumentList '--selftest' -Wait -PassThru -NoNewWindow
+          if ($process.ExitCode -ne 0) { throw "selftest failed ($($process.ExitCode))" }
+      - name: Pipe test
+        shell: pwsh
+        timeout-minutes: 3
+        run: |
+          $plist = Get-Content Resources/Info.plist -Raw
+          $version = [regex]::Match($plist, '<key>CFBundleShortVersionString</key>\s*<string>([^<]+)</string>').Groups[1].Value
+          windows/scripts/pipe-test.ps1 build/stage $version
+      - name: Installer
+        shell: pwsh
+        run: |
+          $plist = Get-Content Resources/Info.plist -Raw
+          $version = [regex]::Match($plist, '<key>CFBundleShortVersionString</key>\s*<string>([^<]+)</string>').Groups[1].Value
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; }
+          & $iscc "/DStage=$PWD\build\stage" "/DVersion=$version" /O"$PWD\build" windows\installer\Araso.iss
+          if ($LASTEXITCODE -ne 0) { throw "iscc failed" }
+          "ARASO_VERSION=$version" >> $env:GITHUB_ENV
+      - name: Sign the installer
+        if: env.SIGNTOOL != ''
+        env:
+          SIGN_PASSWORD: ${{ secrets.WINDOWS_SIGN_PASSWORD }}
+        shell: pwsh
+        run: |
+          & $env:SIGNTOOL sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 /f "$env:RUNNER_TEMP\sign.pfx" /p $env:SIGN_PASSWORD build\Araso-Setup.exe
+          if ($LASTEXITCODE -ne 0) { throw "signing failed" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Araso-Setup
+          path: build/Araso-Setup.exe
+      - name: Into the draft release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          # release.yml makes the draft on the same tag; wait for it.
+          for ($i = 0; $i -lt 60; $i++) {
+            gh release view $tag --repo ${{ github.repository }} *> $null
+            if ($LASTEXITCODE -eq 0) { break }
+            Start-Sleep -Seconds 30
+          }
+          Copy-Item build/Araso-Setup.exe "build/Araso-Setup-$env:ARASO_VERSION.exe"
+          gh release upload $tag build/Araso-Setup.exe "build/Araso-Setup-$env:ARASO_VERSION.exe" --clobber --repo ${{ github.repository }}
+
+  typing:
+    # Real key events into a WPF TextBox and Notepad through the installed input method; on ARM64
+    # Windows those apps load the ARM64 text service (the installer registers it there).
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-latest, windows-11-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Araso-Setup
+          path: build
+      - name: Install and type
+        shell: pwsh
+        env:
+          ARASO_SCREENSHOTS: ${{ github.workspace }}/build/screenshots
+        run: windows/scripts/typing-test.ps1 build/Araso-Setup.exe
+      - name: Screenshots
+        if: always() && matrix.runner == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: build/screenshots
+          if-no-files-found: ignore
+
+  cross:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+      - run: windows/scripts/check-cross.sh x86_64
+      - run: windows/scripts/check-cross.sh x86
+      - run: windows/scripts/check-cross.sh aarch64

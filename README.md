@@ -102,6 +102,26 @@ curl -fsSL https://raw.githubusercontent.com/nyttastudio/araso/main/scripts/get.
 
 </details>
 
+<details>
+<summary>Windows (미리보기)</summary>
+
+Windows 10(1809) 이상에서 도는 같은 입력기입니다. 단어 판단, 사전, 학습은 macOS와 같은 코드이고, 한자 변환은
+AzooKey로 합니다.
+
+1. 릴리스의 `Araso-Setup.exe`를 받아 설치하세요. Araso를 등록하고 한국어 입력 방법에 추가합니다.
+2. 작업 표시줄의 입력 표시기에서 **Araso**를 고르세요. 그 메뉴가 macOS의 입력 메뉴와 같습니다.
+
+macOS와 다른 점은 이렇습니다.
+
+- ⌘ 자리는 Ctrl이 맡습니다. 오른쪽 Ctrl(한자 키)만 누르면 일시정지, 오른쪽 Alt(한/영 키)만 누르면 언어 바꾸기입니다.
+- 앱은 `notepad.exe`처럼 프로그램 이름으로 정하고, 설정 파일은 `%APPDATA%\Araso`에 있습니다.
+- 텍스트 대치는 그 폴더의 `replacements.json`(`{"주소": ["서울시 …"]}`)에서 읽어 Araso가 직접 바꿉니다.
+- 메모장(Windows 10)처럼 오래된 방식의 앱에서는 치는 단어가 커서 자리의 작은 창에 밑줄로 보이고, 단어가 끝나면 한꺼번에 들어갑니다. 그런 앱은 한국어 입력기가 단어 전체를 조합하게 두지 않기 때문입니다.
+
+나머지 대응은 [docs/windows-port.md](docs/windows-port.md)에 있습니다.
+
+</details>
+
 ### 업데이트
 
 새 버전이 나오면 입력 메뉴에 <b>Araso … 로 업데이트…</b>가 생깁니다. 설정 창의 **정보**에서 바뀐 것을 보고

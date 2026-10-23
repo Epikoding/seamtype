@@ -2,8 +2,11 @@
 -- Esc always reaches it, and words are decided only in insert mode.
 -- Put this file in ~/.config/nvim/plugin/ (or require it from init.lua). Vim: araso.vim.
 local araso
-for _, dir in ipairs({ vim.fn.expand('~/Library/Input Methods'), '/Library/Input Methods' }) do
-  local path = dir .. '/Araso.app/Contents/MacOS/Araso'
+local windows = vim.fn.has('win32') == 1
+local candidates = windows and { (vim.env.ProgramFiles or 'C:\\Program Files') .. '\\Araso\\ArasoHost.exe' }
+  or { vim.fn.expand('~/Library/Input Methods') .. '/Araso.app/Contents/MacOS/Araso',
+       '/Library/Input Methods/Araso.app/Contents/MacOS/Araso' }
+for _, path in ipairs(candidates) do
   if vim.fn.executable(path) == 1 then
     araso = path
     break
@@ -11,9 +14,18 @@ for _, dir in ipairs({ vim.fn.expand('~/Library/Input Methods'), '/Library/Input
 end
 if not araso then return end
 
--- The app neovim runs in (macOS gives every app's processes its bundle identifier), so the mode
--- reaches that app's text field and no other.
-local app = vim.env.__CFBundleIdentifier or ''
+-- The app neovim runs in, so the mode reaches that app's text field and no other: macOS gives every
+-- app's processes its bundle identifier; on Windows it is the terminal's program name, from
+-- ARASO_APP or what the terminal tells its shells (none: taken where Esc isn't a switch key).
+local function windowsApp()
+  if vim.env.ARASO_APP then return vim.env.ARASO_APP end
+  if vim.env.WT_SESSION then return 'windowsterminal.exe' end
+  local program = (vim.env.TERM_PROGRAM or ''):lower()
+  if program == 'vscode' then return 'code.exe' end
+  if program == 'wezterm' then return 'wezterm-gui.exe' end
+  return ''
+end
+local app = windows and windowsApp() or (vim.env.__CFBundleIdentifier or '')
 
 local function tell(mode)
   -- Detached, so the last word still goes out when neovim is quitting.

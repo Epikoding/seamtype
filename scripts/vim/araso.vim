@@ -7,9 +7,15 @@ endif
 let g:loaded_araso = 1
 
 let s:araso = ''
-for s:dir in [expand('~/Library/Input Methods'), '/Library/Input Methods']
-  if executable(s:dir . '/Araso.app/Contents/MacOS/Araso')
-    let s:araso = s:dir . '/Araso.app/Contents/MacOS/Araso'
+if has('win32')
+  let s:candidates = [(exists('$ProgramFiles') ? $ProgramFiles : 'C:\Program Files') . '\Araso\ArasoHost.exe']
+else
+  let s:candidates = [expand('~/Library/Input Methods') . '/Araso.app/Contents/MacOS/Araso',
+        \ '/Library/Input Methods/Araso.app/Contents/MacOS/Araso']
+endif
+for s:path in s:candidates
+  if executable(s:path)
+    let s:araso = s:path
     break
   endif
 endfor
@@ -17,9 +23,18 @@ if empty(s:araso)
   finish
 endif
 
-" The app Vim runs in (macOS gives every app's processes its bundle identifier), so the mode
-" reaches that app's text field and no other.
-let s:app = exists('$__CFBundleIdentifier') ? $__CFBundleIdentifier : ''
+" The app Vim runs in, so the mode reaches that app's text field and no other: macOS gives every
+" app's processes its bundle identifier; on Windows it is the terminal's program name, from
+" ARASO_APP or what the terminal tells its shells (none: taken where Esc isn't a switch key).
+function! s:WindowsApp() abort
+  if exists('$ARASO_APP') | return $ARASO_APP | endif
+  if exists('$WT_SESSION') | return 'windowsterminal.exe' | endif
+  let l:program = tolower(exists('$TERM_PROGRAM') ? $TERM_PROGRAM : '')
+  if l:program ==# 'vscode' | return 'code.exe' | endif
+  if l:program ==# 'wezterm' | return 'wezterm-gui.exe' | endif
+  return ''
+endfunction
+let s:app = has('win32') ? s:WindowsApp() : (exists('$__CFBundleIdentifier') ? $__CFBundleIdentifier : '')
 
 function! s:Tell(mode) abort
   " Not stopped when Vim exits, so the last word still goes out when quitting.

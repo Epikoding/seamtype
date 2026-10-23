@@ -28,6 +28,8 @@ scripts/typing-test/run.sh                   # real key events into the settings
 scripts/record-demo/record.sh                # the README demo's footage: real typing into Safari through the installed app
 scripts/record-demo/render.sh                # → docs/media/demo.gif and build/demo/web/demo.mp4 + poster (the website's araso/)
 /usr/bin/log show --last 10m --predicate 'subsystem == "com.nyttastudio.inputmethod.Araso"' --info --debug
+windows/scripts/check-cross.sh [x86_64|x86|aarch64]   # Windows C++ (text service + host) built with zig, here
+swift windows/scripts/make-icon.swift [--slash] windows/Resources/Araso.ico
 ```
 
 - `scripts/typing-test/run.sh` and `scripts/record-demo/record.sh` take over the keyboard, pointer
@@ -134,6 +136,15 @@ tests use `FakeTextField`). It owns the preview and hysteresis, commits, Esc rea
   would start a new word). A Hyper key (⌃⌥⇧⌘ at once), which the switch and pause taps ignore,
   counts as ⌘ here.
 
+**Windows** (docs/windows-port.md): `ArasoService` (Swift, portable, tested on macOS too) is
+what InputMethodKit and `Runtime` are here: a session per text service over a snapshot of the field
+(`SnapshotClient`), Windows keys (`KeyMapper`: Ctrl plays ⌘), the menu, the settings files.
+`ArasoBridge` exposes it to C. `windows/tip` is the TSF text service (C++, in every app),
+`windows/host` the host it talks to over a named pipe (`ArasoHost.exe`: candidate window, settings
+window, updates), `windows/installer` the Inno Setup script. `.github/workflows/windows.yml` builds,
+tests and packs it on `windows-latest`; nothing Windows-only can be run on a Mac. A change to
+`InputSession` reaches Windows too: check `swift test --filter ServiceTests`.
+
 **`Runtime`** (`Sources/Araso`) is a process-wide singleton holding settings, engine and
 converter, plus a `generation` counter. Controllers swap in a fresh session when the generation
 changes, so a settings change applies without a restart.
@@ -205,6 +216,8 @@ runtime.
   out ad hoc and unsigned. Upload `Araso.pkg` (the website's download button) and `Araso.zip`
   (`scripts/get.sh`) under those names for `releases/latest/download/`, plus the versioned copies,
   and the same two as `Legato.*` and `Seamtype.*` (see Earlier names below).
+  The Windows workflow (`windows.yml`) adds `Araso-Setup.exe` and `Araso-Setup-<version>.exe` to
+  the same draft on the tag (signed when `WINDOWS_SIGN_PFX` is set; see the workflow's header).
   To release, run the Release workflow from the Actions tab with the new version
   (`gh workflow run release.yml -f version=0.1.11`): its `bump` job sets the version in
   `Resources/Info.plist` (and the build number one up), runs the tests and pushes that commit to
