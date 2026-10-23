@@ -37,7 +37,7 @@ public static class Keys {
 }
 "@
 
-$profile = "0412:{6D6C7D5F-3B7F-4F0E-9A2C-417261736F01}{6D6C7D5F-3B7F-4F0E-9A2C-417261736F02}"
+$tip = "0412:{6D6C7D5F-3B7F-4F0E-9A2C-417261736F01}{6D6C7D5F-3B7F-4F0E-9A2C-417261736F02}"
 # Only the installer is waited for: -Wait would also wait for the host it starts, which stays.
 # (Not $installer: PowerShell's names ignore case, and the [string] parameter would take the process.)
 $setup = Start-Process -FilePath $Installer -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -PassThru
@@ -46,8 +46,8 @@ if ($setup.ExitCode -ne 0) { throw "install failed ($($setup.ExitCode))" }
 Write-Host "installed"
 $folder = "$env:ProgramFiles\Araso"
 if (-not (Test-Path "$folder\ArasoTip.dll")) { throw "not installed in $folder" }
-[Keys]::InstallLayoutOrTip($profile, 0) | Out-Null
-if (-not [Keys]::SetDefaultLayoutOrTip($profile, 0)) { Write-Host "SetDefaultLayoutOrTip failed" }
+[Keys]::InstallLayoutOrTip($tip, 0) | Out-Null
+if (-not [Keys]::SetDefaultLayoutOrTip($tip, 0)) { Write-Host "SetDefaultLayoutOrTip failed" }
 if (-not (Get-Process ArasoHost -ErrorAction SilentlyContinue)) {
     Start-Process -FilePath "$folder\ArasoHost.exe" -ArgumentList "--server"
 }
@@ -59,7 +59,7 @@ $rows = @(@("qwertyuiop", 0x10), @("asdfghjkl", 0x1E), @("zxcvbnm", 0x2C))
 foreach ($row in $rows) { for ($i = 0; $i -lt $row[0].Length; $i++) { $scans[[string]$row[0][$i]] = $row[1] + $i } }
 $scans[" "] = 0x39
 
-function Type([string]$keys) {
+function Send-Keys([string]$keys) {
     foreach ($ch in $keys.ToCharArray()) {
         $scan = $scans[[string]$ch]
         [Keys]::Key($scan, $false, $false); Start-Sleep -Milliseconds 40
@@ -75,7 +75,7 @@ function Case([string]$keys, [string]$expected, [scriptblock]$after) {
     Start-Sleep -Milliseconds 500
     $edit = [Keys]::FindWindowEx($window, [IntPtr]::Zero, "Edit", $null)
     if ($edit -eq [IntPtr]::Zero) { $edit = [Keys]::FindWindowEx($window, [IntPtr]::Zero, "RichEditD2DPT", $null) }
-    Type $keys
+    Send-Keys $keys
     if ($after) { & $after }
     Start-Sleep -Milliseconds 800
     $text = [Keys]::Text($edit)
@@ -95,7 +95,7 @@ $results = @(
     # Right Alt tapped alone switches the word just committed (0x38 extended: right Alt).
     (Case "hello " "ㅗ디ㅣㅐ " { Tap 0x38 }),
     # Right Ctrl tapped alone pauses (0x1D extended): keys then go in as typed.
-    (Case "" "dkssud " { Tap 0x1D; Type "dkssud " })
+    (Case "" "dkssud " { Tap 0x1D; Send-Keys "dkssud " })
 )
 if ($results -contains $false) {
     Get-ChildItem "$env:APPDATA\Araso" -ErrorAction SilentlyContinue | Select-Object Name | Out-Host
