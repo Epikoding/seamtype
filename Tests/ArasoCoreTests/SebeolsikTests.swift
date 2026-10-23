@@ -73,6 +73,11 @@ import Testing
         #expect(Self.type(";f3 ") == "밥 ")           // a word starts on ; (ㅂ)
         #expect(Self.type("0tpd ") == "커피 ")        // and on 0 (ㅋ)
         #expect(Self.type("mr2uf. ") == "했다. ")
+        #expect(Self.type("mfqngjvf3 ") == "핫스왑 ") // 3 is the final ㅂ: 왑 is only in rare words (나왑)
+        #expect(Self.type("or3't ") == "챕터 ")
+        #expect(Self.type("0e3hduf ") == "켭니다 ")
+        #expect(Self.type("ldqkb#jgs ") == "짓궂은 ")    // # is the final ㅈ
+        #expect(Self.type("jfspf! ") == "안팎 ")
     }
 
     @Test func deleteTakesBackTheLastJamo() {

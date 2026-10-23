@@ -323,7 +323,7 @@ public final class InputSession {
         // (갔 is kf2, 밥 starts on ;); elsewhere it is the symbol. Not in a URL or path, though the
         // word itself doesn't make one: 밝 is ;f@, not an address.
         if case .printable(let ch) = key, heldBoundary == nil, keys.isEmpty || !inURLRun,
-           KoreanLayout.current.continuesWord(keys, with: ch, afterDigit: afterDigit, knows: Self.koreanModel.knowsSyllable),
+           KoreanLayout.current.continuesWord(keys, with: ch, afterDigit: afterDigit, knows: Self.koreanModel.knowsSyllableIncludingRare),
            !Self.hasURLMarker(run(client)) {
             return handle(.letter(ch), client: client)
         }

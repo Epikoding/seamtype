@@ -141,6 +141,20 @@ public struct KoreanModel: Sendable {
         tiers[syllable] != nil || Self.listSyllables.contains(syllable)
     }
 
+    /// `knowsSyllable`, or in a word the subtitles have only a few times (왑 of 나왑, 챕 of 챕터들,
+    /// 탭): for 3-set's digit and symbol keys, which go on with the word only into a syllable
+    /// someone types. A key there can only add a final or a vowel, never make 뗘, so the tail's
+    /// dialect and typos matter less than its loanwords.
+    public func knowsSyllableIncludingRare(_ syllable: Character) -> Bool {
+        knowsSyllable(syllable) || Self.rareListSyllables.contains(syllable)
+    }
+
+    private static let rareListSyllables: Set<Character> = {
+        var set = Set<Character>()
+        for word in rareVocabulary { set.formUnion(word) }
+        return set
+    }()
+
     private static let listSyllables: Set<Character> = {
         var set = Set<Character>()
         for word in vocabulary { set.formUnion(word) }
