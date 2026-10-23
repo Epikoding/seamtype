@@ -77,7 +77,8 @@ jobs:
           $version = [regex]::Match($plist, '<key>CFBundleShortVersionString</key>\s*<string>([^<]+)</string>').Groups[1].Value
           "ARASO_VERSION=$version" >> $env:GITHUB_ENV
       - name: Configure
-        run: cmake -S windows -B build/windows -A ${{ matrix.arch }} -DARASO_VERSION=${{ env.ARASO_VERSION }} -DARASO_HOST=${{ matrix.arch == 'Win32' && 'OFF' || 'ON' }} "-DARASO_PUBLISHER=${{ vars.ARASO_WINDOWS_PUBLISHER }}"
+        # Quoted: PowerShell hands an unquoted -DNAME=0.2.2 to a program split at the first dot.
+        run: cmake -S windows -B build/windows -A ${{ matrix.arch }} "-DARASO_VERSION=${{ env.ARASO_VERSION }}" -DARASO_HOST=${{ matrix.arch == 'Win32' && 'OFF' || 'ON' }} "-DARASO_PUBLISHER=${{ vars.ARASO_WINDOWS_PUBLISHER }}"
       - name: Build
         run: cmake --build build/windows --config Release
       - if: matrix.arch == 'ARM64'
@@ -143,7 +144,10 @@ jobs:
       - name: Pipe test
         shell: pwsh
         timeout-minutes: 3
-        run: windows/scripts/pipe-test.ps1 build/stage
+        run: |
+          $plist = Get-Content Resources/Info.plist -Raw
+          $version = [regex]::Match($plist, '<key>CFBundleShortVersionString</key>\s*<string>([^<]+)</string>').Groups[1].Value
+          windows/scripts/pipe-test.ps1 build/stage $version
       - name: Installer
         shell: pwsh
         run: |
@@ -200,7 +204,16 @@ jobs:
           path: build
       - name: Install and type
         shell: pwsh
+        env:
+          ARASO_SCREENSHOTS: ${{ github.workspace }}/build/screenshots
         run: windows/scripts/typing-test.ps1 build/Araso-Setup.exe
+      - name: Screenshots
+        if: always() && matrix.runner == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: build/screenshots
+          if-no-files-found: ignore
 
   cross:
     runs-on: ubuntu-latest

@@ -21,6 +21,8 @@ public static class Keys {
     [DllImport("user32.dll")] static extern uint SendInput(uint count, INPUT[] inputs, int size);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+    [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr window, out RECT rect);
     [DllImport("user32.dll")] public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string cls, string title);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr w, StringBuilder l);
     [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr w, IntPtr l);
@@ -185,9 +187,8 @@ function Open-Field([string]$kind) {
     return @{ process = $process; window = $window; read = { [Keys]::Text($edit) }.GetNewClosure() }
 }
 
-function Case([string]$keys, [string]$expected, [scriptblock]$after, [string]$kind = "notepad") {
-    $field = Open-Field $kind
-    $notepad = $field.process
+# Brings a field's window to the front in Korean (Araso's language) and says how it stands.
+function Ready($field, [string]$kind) {
     $window = $field.window
     for ($i = 0; $i -lt 10 -and [Keys]::GetForegroundWindow() -ne $window; $i++) {
         [Keys]::Front($window) | Out-Null
@@ -205,8 +206,15 @@ function Case([string]$keys, [string]$expected, [scriptblock]$after, [string]$ki
         Start-Sleep -Milliseconds 800
         $layout = "{0:X8}" -f [Keys]::GetKeyboardLayout($thread).ToInt64()
     }
-    $loaded = (Get-Process -Id $notepad.Id).Modules | Where-Object { $_.ModuleName -eq "ArasoTip.dll" } | Select-Object -First 1
+    $loaded = (Get-Process -Id $field.process.Id).Modules | Where-Object { $_.ModuleName -eq "ArasoTip.dll" } | Select-Object -First 1
     Write-Host "${kind}: in front $front, layout $layout, ArasoTip.dll $(if ($loaded) { $loaded.FileName } else { 'not loaded' })"
+}
+
+function Case([string]$keys, [string]$expected, [scriptblock]$after, [string]$kind = "notepad") {
+    $field = Open-Field $kind
+    $notepad = $field.process
+    $window = $field.window
+    Ready $field $kind
     Send-Keys $keys
     if ($after) { & $after }
     Start-Sleep -Milliseconds 800
@@ -233,6 +241,12 @@ function Tap([int]$scan) {
 # The classic field: Notepad's Edit control (Windows 10, Server), or the same control in a WinForms
 # window where Notepad is Windows 11's own app (CI's ARM64 runner).
 $classic = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "winforms" } else { "notepad" }
+
+# The first WPF window of a fresh machine loads .NET's WPF for a while and may come up behind:
+# one opened and closed first.
+$warm = Open-Field "wpf"
+Start-Sleep -Seconds 2
+Stop-Process -Id $warm.process.Id -Force
 
 $results = @(
     # A WPF TextBox: a TSF text store, where the word is composed in the text.
@@ -261,6 +275,73 @@ Case "hello " "ㅗ디ㅣㅐ " { [Keys]::Key(0xF2, $false, $false); Start-Sleep -
 Case "" "dkssud " { [Keys]::Key(0xF1, $false, $false); Start-Sleep -Milliseconds 200; Send-Keys "dkssud " } $classic | Out-Null
 
 Write-Host "machine: $env:PROCESSOR_ARCHITECTURE"
+# Screenshots of what Araso draws, for looking at the design (ARASO_SCREENSHOTS: the folder; CI
+# uploads it). Not on a runner without a desktop.
+if ($env:ARASO_SCREENSHOTS -and $env:PROCESSOR_ARCHITECTURE -ne "ARM64") {
+    New-Item -ItemType Directory -Force $env:ARASO_SCREENSHOTS | Out-Null
+    Add-Type -AssemblyName System.Drawing
+    # The window and what is drawn around it (`below`: room for the candidate window).
+    function Shot([string]$name, [IntPtr]$window, [int]$below = 0) {
+        $rect = New-Object Keys+RECT
+        [Keys]::GetWindowRect($window, [ref]$rect) | Out-Null
+        $width = $rect.Right - $rect.Left
+        $height = $rect.Bottom - $rect.Top + $below
+        $bitmap = New-Object System.Drawing.Bitmap $width, $height
+        $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+        $graphics.CopyFromScreen($rect.Left, $rect.Top, 0, 0, $bitmap.Size)
+        $bitmap.Save((Join-Path $env:ARASO_SCREENSHOTS "$name.png"), [System.Drawing.Imaging.ImageFormat]::Png)
+        $graphics.Dispose(); $bitmap.Dispose()
+        Write-Host "screenshot: $name"
+    }
+    function Kept([string]$kind) { $f = Open-Field $kind; Ready $f $kind; return $f }
+
+    # A classic app: the word drawn at the caret.
+    $f = Kept $classic
+    Send-Keys "gksrmf dkssud"; Start-Sleep -Milliseconds 700
+    Shot "1-classic-app-word-at-caret" $f.window 40
+    Stop-Process -Id $f.process.Id -Force
+    # A TSF app: the word composed in the text, underlined; then the pause indicator.
+    $f = Kept "wpf"
+    Send-Keys "gksrmf dkssud"; Start-Sleep -Milliseconds 700
+    Shot "2-tsf-app-composing" $f.window 40
+    Send-Keys " "; Tap 0x1D; Start-Sleep -Milliseconds 150
+    Shot "3-paused" $f.window 60
+    Tap 0x1D; Start-Sleep -Milliseconds 150
+    Shot "4-resumed" $f.window 60
+    Stop-Process -Id $f.process.Id -Force
+
+    # Japanese on, for kana and the kanji candidates (the host reads settings.json as it starts).
+    $settings = Join-Path $env:APPDATA "Araso\settings.json"
+    New-Item -ItemType Directory -Force (Split-Path $settings) | Out-Null
+    [IO.File]::WriteAllText($settings, '{ "japanese": true, "liveConversion": false }')
+    Get-Process ArasoHost -ErrorAction SilentlyContinue | Stop-Process -Force
+    Start-Process -FilePath "$folder\ArasoHost.exe" -ArgumentList "--server"
+    Start-Sleep -Seconds 8
+    $f = Kept "wpf"
+    Send-Keys "kyouhaiitenki"; Start-Sleep -Milliseconds 700
+    Shot "5-japanese-kana" $f.window 40
+    Send-Keys " "; Start-Sleep -Milliseconds 900
+    Shot "6-kanji-conversion" $f.window 320
+    Send-Keys " "; Start-Sleep -Milliseconds 700
+    Shot "7-kanji-candidates" $f.window 320
+    Stop-Process -Id $f.process.Id -Force
+
+    # The settings window, every tab; Try Typing with a few words in it.
+    foreach ($tab in "general", "keys", "apps", "learning", "about") {
+        $process = Start-Process -FilePath "$folder\ArasoHost.exe" -ArgumentList "--settings", $tab -PassThru
+        for ($i = 0; $i -lt 60 -and $process.MainWindowHandle -eq [IntPtr]::Zero; $i++) { Start-Sleep -Milliseconds 250; $process.Refresh() }
+        [Keys]::Front($process.MainWindowHandle) | Out-Null
+        Start-Sleep -Seconds 2
+        Shot "settings-$tab" $process.MainWindowHandle
+        Stop-Process -Id $process.Id -Force
+    }
+    $f = Kept "host"
+    Send-Keys "dkssud hello kyouha "; Start-Sleep -Milliseconds 900
+    Shot "settings-typing" $f.window
+    Stop-Process -Id $f.process.Id -Force
+    Remove-Item $settings -ErrorAction SilentlyContinue
+}
+
 if (Test-Path $log) { Write-Host "--- araso.log"; Get-Content $log | Select-String -NotMatch "scan code" | Select-Object -Last 400 | Out-Host }
 reg query "HKCU\Software\Microsoft\CTF\TIP" /s 2>$null | Select-String -Pattern "6D6C7D5F" | Out-Host
 reg query "HKLM\Software\Microsoft\CTF\TIP\{6D6C7D5F-3B7F-4F0E-9A2C-417261736F01}" /s 2>$null | Select-Object -First 20 | Out-Host

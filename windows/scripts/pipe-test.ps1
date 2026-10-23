@@ -1,8 +1,9 @@
 # Starts ArasoHost.exe --server from a staged folder and types through its pipe as the text service
 # does: attach, the keys of "dkssud" with a snapshot of the field, then blur. The field must end up
 # "안녕", composed while typed and put in by blur. The CI's check that the host serves, not only builds.
-#   pwsh windows/scripts/pipe-test.ps1 build/stage
-param([string]$Stage = "build/stage")
+# With a version, the settings model (About) must report it.
+#   pwsh windows/scripts/pipe-test.ps1 build/stage [0.2.4]
+param([string]$Stage = "build/stage", [string]$Version = "")
 $ErrorActionPreference = "Stop"
 
 $server = Start-Process -FilePath (Join-Path $Stage "ArasoHost.exe") -ArgumentList "--server" -PassThru
@@ -63,6 +64,9 @@ try {
     $answer = Send @{ op = "blur"; client = $client; context = (Context) }
     Apply $answer.reply.ops
     if ($script:text -ne "안녕" -or $script:marked) { throw "blur left '$script:text' (marked: $script:marked)" }
+    $model = Send @{ op = "settings" }
+    Write-Host "pipe test: the settings model says version '$($model.settings.version)'"
+    if ($Version -and $model.settings.version -ne $Version) { throw "the host says version '$($model.settings.version)', not $Version" }
     $menu = Send @{ op = "menu"; client = $client }
     if (-not ($menu.reply.menu | Where-Object { $_.id -eq "settings" })) { throw "no menu" }
     Send @{ op = "detach"; client = $client } | Out-Null

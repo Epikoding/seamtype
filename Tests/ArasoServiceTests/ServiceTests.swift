@@ -590,12 +590,17 @@ final class Harness {
     @Test func requestsGoThroughTheCInterface() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("araso-bridge-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: folder) }
-        let config = #"{ "support": "\#(folder.path)", "version": "1.0", "language": "en", "ownApp": "arasohost.exe" }"#
+        let config = #"{ "support": "\#(folder.path)", "version": "0.2.2", "language": "en", "ownApp": "arasohost.exe" }"#
         #expect(araso_start(config) == 0)
         let answer = try #require(araso_request(#"{ "op": "attach", "app": "notepad.exe" }"#))
         defer { araso_free(answer) }
         let response = try JSONDecoder().decode(ServiceResponse.self, from: Data(String(cString: answer).utf8))
         #expect(response.reply.client != nil)
+        // What the settings window shows as the version is the one the host started the runtime with.
+        let model = try #require(araso_request(#"{ "op": "settings" }"#))
+        defer { araso_free(model) }
+        let settings = try JSONDecoder().decode(ServiceResponse.self, from: Data(String(cString: model).utf8))
+        #expect(settings.settings?.version == "0.2.2")
         let bad = try #require(araso_request("not json"))
         defer { araso_free(bad) }
         #expect(String(cString: bad).contains("bad request"))

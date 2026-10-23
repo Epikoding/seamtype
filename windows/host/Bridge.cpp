@@ -1,5 +1,10 @@
 #include "Bridge.h"
 
+#include "araso_version.h"
+
+#include <cstdio>
+#include <vector>
+
 #include <shlobj.h>
 
 #include <map>
@@ -29,13 +34,7 @@ std::wstring Bridge::SupportFolder() {
     return folder + L"\\Araso";
 }
 
-std::string Bridge::Version() {
-#ifdef ARASO_VERSION_STRING
-    return ARASO_VERSION_STRING;
-#else
-    return "0.0.0";
-#endif
-}
+std::string Bridge::Version() { return ARASO_VERSION_STRING; }
 
 bool Bridge::Start(std::wstring &error, bool converter) {
     if (request_) return true;
