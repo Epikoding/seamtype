@@ -33,9 +33,23 @@ new. This file maps each macOS piece to its Windows one and says where the two d
 - **What only the host can start** (a click in the candidate window, a vim mode change that
   commits, the menu's Pause) is queued for the client; the host posts `Araso.Pending` to the DLL's
   message-only window, and the DLL fetches and makes those edits in an edit session.
-- **Shortcuts stay the app's.** A key with Ctrl, Alt or Win is first offered to the host (`test`):
-  only the pause shortcut, a switch key, or a word in progress (which goes in first) is taken in
-  `OnTestKeyDown`; the rest reach the app untouched, and the session only hears of them.
+- **A key kept is never lost.** TSF holds a text service to what `OnTestKeyDown` answered: a key
+  it keeps reaches the app nowhere else (a classic app gets `VK_PROCESSKEY`), and one it lets go
+  never comes to `OnKeyDown`. So the host answers `test` for every key: letters, digits, Space and
+  symbols are kept unless keys pass through (paused, vim's normal mode); any other key, a shortcut
+  included, only when the session has a word to finish or a switch to make. A kept key the session
+  then passes on is typed by the host after the word (`claimed`: Space after a word, as macOS's
+  app types it) or sent again for the app (`replay`: Return, Tab, a shortcut ending a word). A
+  kept key's up is kept too. Modifiers are only seen; a modifier's up is kept when it ends a tap
+  that does something, so a lone right Alt doesn't open the menu bar.
+- **Classic apps get the word at the caret.** Windows' compatibility layer for apps that only
+  know IMM32 (CUAS: Notepad's Edit control on Windows 10 and Server, many Win32 apps) treats a
+  Korean input method as IMM32's Korean ones: one syllable composed at a time, and a composition
+  of a whole word ended as soon as it starts. Araso composes the whole word (its language can
+  still change), so in such a context (TSF marks it transitory, or the app was seen ending a
+  composition at once) the text service keeps the word itself, shows it to the session as if
+  composed at the caret, and the host draws it there underlined (`WordWindow`); it goes in whole
+  when the word ends. TSF apps (WPF, Windows 11's Notepad, browsers, Office) compose it in the text.
 
 ## macOS → Windows
 
@@ -43,7 +57,7 @@ new. This file maps each macOS piece to its Windows one and says where the two d
 | --- | --- | --- |
 | IMKInputController, `handle(_:client:)` | `ITfKeyEventSink` (`windows/tip/TextService.cpp`) | Keys go to the host; a key the session doesn't take still reaches the app (Space after a word, as on macOS). |
 | `IMKClient` (`TextClient`) | `SnapshotClient` + edit sessions | UTF-16 offsets in both (NSRange ↔ ACP). A field without ACP positions still works, without the features that read back (a switch right after a commit, URLs). |
-| marked text | TSF composition + `ITfDisplayAttributeProvider` | Underlined, as macOS draws marked text; a phrase being converted to kanji is drawn as the converted clause (thick). |
+| marked text | TSF composition + `ITfDisplayAttributeProvider` | Underlined, as macOS draws marked text; a phrase being converted to kanji is drawn as the converted clause (thick). In classic apps, the host's `WordWindow` at the caret (see above). |
 | `IMKCandidates` | the host's candidate window (`windows/host/Ui.cpp`) | Numbered rows, the highlight moving with Space/↓/↑; a click chooses. |
 | `PauseHUD` | the host's `PauseHud` | Araso's icon under the caret for a moment, struck through when paused. |
 | input menu (`menu()`) | the input indicator's menu (`LangBarButton`, `GUID_LBI_INPUTMODE`) | The same items and names, built by `ServiceRuntime.menu`. |
@@ -74,9 +88,9 @@ new. This file maps each macOS piece to its Windows one and says where the two d
 - `scripts/typing-test`, `scripts/record-demo`: macOS automation.
 - UI-less mode for full-screen games (`ITfUIElement`): the candidate window is a topmost window,
   which an exclusive full-screen game may hide.
-- Untested on real hardware so far: the right Alt tap (TSF may not hand a lone Alt to the key
-  sink in every app; 한/영 works where it doesn't), ARM64 registration, and Store (AppContainer)
-  apps reaching the pipe.
+- Tested on CI's Windows (`windows/scripts/typing-test.ps1`: real key events into a WPF TextBox and
+  Notepad), not yet on real hardware: ARM64 registration, Store (AppContainer) apps reaching the
+  pipe, and Korean keyboards' 한/영 and 한자 keys.
 
 ## Building
 
