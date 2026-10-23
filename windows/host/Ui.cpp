@@ -94,6 +94,7 @@ namespace {
 
 const wchar_t *kCandidateClass = L"ArasoCandidates";
 const wchar_t *kPauseClass = L"ArasoPauseHud";
+const wchar_t *kWordClass = L"ArasoWord";
 
 void RegisterOnce(const wchar_t *name, WNDPROC proc, bool shadow) {
     WNDCLASSEXW cls = {sizeof cls};
@@ -129,6 +130,96 @@ POINT Place(const RECT &anchor, SIZE size, int gap) {
 }
 
 }  // namespace
+
+// MARK: - The word at the caret
+
+void WordWindow::Show(const std::wstring &text, const RECT &caret) {
+    if (text.empty() || caret.bottom <= caret.top) return Hide();
+    RegisterOnce(kWordClass, Proc, true);
+    if (!window_) window_ = MakePopup(kWordClass, this);
+    if (!window_) return;
+    text_ = text;
+    dpi_ = ui::DpiAt(caret);
+    HDC screen = GetDC(nullptr);
+    HFONT font = ui::Font(dpi_, 110);
+    HGDIOBJ old = SelectObject(screen, font);
+    SIZE extent = {};
+    GetTextExtentPoint32W(screen, text_.c_str(), static_cast<int>(text_.size()), &extent);
+    SelectObject(screen, old);
+    DeleteObject(font);
+    ReleaseDC(nullptr, screen);
+    int pad = ui::Scale(6, dpi_);
+    SIZE size = {extent.cx + 2 * pad, std::max(static_cast<LONG>(caret.bottom - caret.top), extent.cy) + pad};
+    // Where the word would be: from the caret, over its line.
+    RECT work = ui::WorkAreaAt(caret);
+    POINT origin = {caret.left, caret.top - pad / 2};
+    origin.x = std::max(work.left, std::min(origin.x, static_cast<LONG>(work.right - size.cx)));
+    origin.y = std::max(work.top, std::min(origin.y, static_cast<LONG>(work.bottom - size.cy)));
+    SetWindowPos(window_, HWND_TOPMOST, origin.x, origin.y, size.cx, size.cy, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    InvalidateRect(window_, nullptr, FALSE);
+}
+
+void WordWindow::Hide() {
+    if (window_) ShowWindow(window_, SW_HIDE);
+    text_.clear();
+}
+
+bool WordWindow::Shown(RECT &rect) const {
+    if (!window_ || !IsWindowVisible(window_)) return false;
+    return GetWindowRect(window_, &rect) != FALSE;
+}
+
+void WordWindow::Paint(HDC target) {
+    RECT client;
+    GetClientRect(window_, &client);
+    HDC dc = CreateCompatibleDC(target);
+    HBITMAP bitmap = CreateCompatibleBitmap(target, client.right, client.bottom);
+    HGDIOBJ oldBitmap = SelectObject(dc, bitmap);
+    ui::Theme theme = ui::CurrentTheme();
+    HBRUSH background = CreateSolidBrush(theme.background);
+    FillRect(dc, &client, background);
+    DeleteObject(background);
+    HFONT font = ui::Font(dpi_, 110);
+    HGDIOBJ oldFont = SelectObject(dc, font);
+    SetBkMode(dc, TRANSPARENT);
+    SetTextColor(dc, theme.text);
+    RECT text = client;
+    InflateRect(&text, -ui::Scale(6, dpi_), 0);
+    DrawTextW(dc, text_.c_str(), -1, &text, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    // Underlined, as a composition is in the text.
+    SIZE extent = {};
+    GetTextExtentPoint32W(dc, text_.c_str(), static_cast<int>(text_.size()), &extent);
+    int y = (client.bottom + extent.cy) / 2;
+    RECT line = {text.left, y - ui::Scale(1, dpi_), text.left + extent.cx, y};
+    HBRUSH underline = CreateSolidBrush(theme.text);
+    FillRect(dc, &line, underline);
+    DeleteObject(underline);
+    BitBlt(target, 0, 0, client.right, client.bottom, dc, 0, 0, SRCCOPY);
+    SelectObject(dc, oldFont);
+    DeleteObject(font);
+    SelectObject(dc, oldBitmap);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+}
+
+LRESULT CALLBACK WordWindow::Proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+    auto *self = reinterpret_cast<WordWindow *>(GetWindowLongPtrW(window, GWLP_USERDATA));
+    switch (message) {
+    case WM_MOUSEACTIVATE:
+        return MA_NOACTIVATE;
+    case WM_PAINT: {
+        PAINTSTRUCT paint;
+        HDC dc = BeginPaint(window, &paint);
+        if (self) self->Paint(dc);
+        EndPaint(window, &paint);
+        return 0;
+    }
+    case WM_ERASEBKGND:
+        return 1;
+    default:
+        return DefWindowProcW(window, message, wParam, lParam);
+    }
+}
 
 // MARK: - Candidates
 

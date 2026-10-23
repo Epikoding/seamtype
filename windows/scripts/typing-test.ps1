@@ -131,38 +131,23 @@ function Tap([int]$scan) {
 }
 
 $results = @(
+    # A WPF TextBox: a TSF text store, where the word is composed in the text.
     (Case "dkssud hello " "안녕 hello " $null "wpf"),
+    # Right Alt tapped alone switches the word just committed (0x38 extended: right Alt).
+    (Case "hello " "ㅗ디ㅣㅐ " { Tap 0x38 } "wpf"),
+    # Notepad's Edit control: a classic app, where the word is drawn at the caret and goes in whole.
     (Case "dkssud hello " "안녕 hello " $null),
     (Case "gksrmf " "한글 " $null),
-    # Right Alt tapped alone switches the word just committed (0x38 extended: right Alt).
-    (Case "hello " "ㅗ디ㅣㅐ " { Tap 0x38 }),
+    # Switched while typing, before the Space.
+    (Case "hello" "ㅗ디ㅣㅐ " { Tap 0x38; Send-Keys " " }),
     # Right Ctrl tapped alone pauses (0x1D extended): keys then go in as typed.
     (Case "" "dkssud " { Tap 0x1D; Send-Keys "dkssud " })
 )
-# Experiments, reported but not required: Notepad ends every composition at once (CUAS). Is it
-# the caret (a Korean input method selects its last character as an interim one), or the language
-# Araso is listed under?
-Write-Host "--- experiment: interim character"
-$env:ARASO_INTERIM = "1"
-Case "dkssud hello " "안녕 hello " $null | Out-Null
-Remove-Item Env:ARASO_INTERIM
-foreach ($language in @("0409", "0411")) {
-    Write-Host "--- experiment: listed under $language"
-    Get-Process ArasoHost -ErrorAction SilentlyContinue | Stop-Process -Force
-    Start-Process -FilePath "$folder\ArasoHost.exe" -ArgumentList "--server"
-    $env:ARASO_LANGID = $language
-    & "$env:WINDIR\System32\regsvr32.exe" /s "$folder\ArasoTip.dll" | Out-Null
-    $listed = "${language}:{6D6C7D5F-3B7F-4F0E-9A2C-417261736F01}{6D6C7D5F-3B7F-4F0E-9A2C-417261736F02}"
-    [Keys]::InstallLayoutOrTip($listed, 0) | Out-Null
-    [Keys]::SetDefaultLayoutOrTip($listed, 0) | Out-Null
-    Set-WinDefaultInputMethodOverride -InputTip $listed
-    Start-Sleep -Seconds 8
-    $script:language = $language
-    Case "dkssud hello " "안녕 hello " $null | Out-Null
-    Remove-Item Env:ARASO_LANGID
-}
+# Reported, not required: switching the word just committed in a classic app, whose text Araso
+# edits only through Windows' compatibility layer.
+Case "hello " "ㅗ디ㅣㅐ " { Tap 0x38 } | Out-Null
 
-if (Test-Path $log) { Write-Host "--- araso.log"; Get-Content $log | Select-Object -Last 400 | Out-Host }
+if (Test-Path $log) { Write-Host "--- araso.log"; Get-Content $log | Select-String -NotMatch "test down|up kept" | Select-Object -Last 200 | Out-Host }
 reg query "HKCU\Software\Microsoft\CTF\TIP" /s 2>$null | Select-String -Pattern "6D6C7D5F" | Out-Host
 reg query "HKLM\Software\Microsoft\CTF\TIP\{6D6C7D5F-3B7F-4F0E-9A2C-417261736F01}" /s 2>$null | Select-Object -First 20 | Out-Host
 Get-WinUserLanguageList | Format-List | Out-Host

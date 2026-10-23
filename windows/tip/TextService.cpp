@@ -167,6 +167,7 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr *threadMgr, TfClientId clientI
 
 STDMETHODIMP TextService::Deactivate() {
     if (composition_ && compositionContext_) CommitIn(compositionContext_, "blur");
+    else if (!floating_.empty() && floatingContext_) CommitIn(floatingContext_, "blur");
     host_.Detach();
     if (button_) {
         ITfLangBarItemMgr *items = nullptr;
@@ -194,6 +195,7 @@ STDMETHODIMP TextService::Deactivate() {
     }
     SafeRelease(composition_);
     SafeRelease(compositionContext_);
+    ClearFloating();
     DestroyMessageWindow();
     SafeRelease(threadMgr_);
     clientId_ = TF_CLIENTID_NULL;
@@ -207,6 +209,7 @@ STDMETHODIMP TextService::OnSetFocus(ITfDocumentMgr *focus, ITfDocumentMgr *prev
     Log("focus moved in %s (%s)", Utf8(app_).c_str(), composition_ ? "while composing" : "idle");
     // What was being typed in the last field goes in there, as shown.
     if (composition_ && compositionContext_) CommitIn(compositionContext_, "blur");
+    else if (!floating_.empty() && floatingContext_) CommitIn(floatingContext_, "blur");
     if (!focus) return S_OK;
     Json request = Json::object();
     request.set("op", "focus");
@@ -231,6 +234,7 @@ void TextService::CommitIn(ITfContext *context, const char *op) {
         if (!Exchange(cookie, context, request, handled)) EndComposition(cookie);
         // Whatever the host did, nothing stays composed in a field that lost the focus.
         if (composition_) EndComposition(cookie);
+        if (floatingContext_ == context) ClearFloating();
         context->Release();
         return S_OK;
     });
@@ -270,7 +274,7 @@ bool TextService::HostTakes(WPARAM wParam, LPARAM lParam, bool up) {
     request.set("key", KeyJson(wParam, lParam));
     if (up) request.set("up", true);
     Json response;
-    bool answered = host_.Request(request, response, 200);
+    bool answered = host_.Request(request, response, 500);
     bool taken = answered && response["reply"]["handled"].asBool();
     if (Verbose() && !answered) Log("test: no answer from the host");
     asked_ = {true, wParam, lParam, GetTickCount(), taken};
@@ -373,7 +377,13 @@ void TextService::Replay(WPARAM wParam, LPARAM lParam) {
 Json TextService::KeyJson(WPARAM wParam, LPARAM lParam) const {
     Json key = Json::object();
     key.set("vk", static_cast<int>(wParam));
-    key.set("scan", static_cast<int>((lParam >> 16) & 0xFF));
+    int scan = static_cast<int>((lParam >> 16) & 0xFF);
+    if (scan == 0) {
+        // WPF hands TSF keys without their scan codes: the US keyboard's for the key.
+        scan = static_cast<int>(MapVirtualKeyW(static_cast<UINT>(wParam), MAPVK_VK_TO_VSC) & 0xFF);
+        if (Verbose()) Log("a key without its scan code");
+    }
+    key.set("scan", scan);
     key.set("extended", ((lParam >> 24) & 1) != 0);
     key.set("shift", GetKeyState(VK_SHIFT) < 0);
     key.set("ctrl", GetKeyState(VK_CONTROL) < 0);
@@ -439,11 +449,15 @@ bool TextService::Exchange(TfEditCookie cookie, ITfContext *context, Json reques
             }
         }
     }
-    // Where the word and the caret are now: the host places its windows there.
-    if (response["ui"].isObject()) {
+    // Where the word and the caret are now: the host places its windows there, and draws a word
+    // kept here (`floating_`) at the caret.
+    bool preview = !floating_.empty() && floatingContext_ == context;
+    if (response["ui"].isObject() || preview || previewShown_) {
         Json place = Json::object();
         place.set("op", "place");
         place.set("rects", Rects(cookie, context));
+        if (preview) place.set("preview", Utf8(floating_));
+        previewShown_ = preview;
         Json ignored;
         host_.Request(place, ignored, 200);
     }
@@ -584,6 +598,19 @@ Json TextService::Snapshot(TfEditCookie cookie, ITfContext *context, bool &maske
     anchor->Release();
     // Text with embedded objects reads shorter than its positions: then the positions don't line up.
     if (static_cast<LONG>(text.size()) != want) out.set("unreadable", true);
+    if (!floating_.empty() && floatingContext_ == context && selStart >= start) {
+        // The word kept here, as if composed at the caret.
+        text = text.substr(0, std::min(text.size(), static_cast<size_t>(selStart - start))) + floating_;
+        LONG length = static_cast<LONG>(floating_.size());
+        Json marked = Json::array();
+        marked.push(static_cast<int>(selStart));
+        marked.push(static_cast<int>(length));
+        out.set("marked", marked);
+        Json caret = Json::array();
+        caret.push(static_cast<int>(selStart + length));
+        caret.push(0);
+        out.set("selection", caret);
+    }
     out.set("text", Utf8(text));
     out.set("start", static_cast<int>(start));
     return out;
@@ -657,22 +684,6 @@ void TextService::MoveCaretToEnd(TfEditCookie cookie, ITfContext *context, ITfRa
     caret->Release();
 }
 
-/// The composition's last character selected as an interim character (a Korean input method's
-/// block caret). ARASO_INTERIM: an experiment of the typing test.
-void TextService::SelectLastAsInterim(TfEditCookie cookie, ITfContext *context, ITfRange *range) {
-    ITfRange *last = nullptr;
-    if (FAILED(range->Clone(&last)) || !last) return;
-    LONG moved = 0;
-    last->Collapse(cookie, TF_ANCHOR_END);
-    last->ShiftStart(cookie, -1, &moved, nullptr);
-    TF_SELECTION selection = {};
-    selection.range = last;
-    selection.style.ase = TF_AE_NONE;
-    selection.style.fInterimChar = TRUE;
-    context->SetSelection(cookie, 1, &selection);
-    last->Release();
-}
-
 void TextService::EndComposition(TfEditCookie cookie) {
     if (!composition_) return;
     ITfRange *range = nullptr;
@@ -688,7 +699,12 @@ void TextService::EndComposition(TfEditCookie cookie) {
 /// The edits, in order: each replaces its range (else the composition, else the selection);
 /// `mark` leaves its text composed, `insert` puts it in for good.
 void TextService::ApplyOps(TfEditCookie cookie, ITfContext *context, const Json &ops, bool converting) {
+    bool floats = Floats(context);
     for (const Json &op : ops.items()) {
+        if (floats) {
+            ApplyFloating(cookie, context, op);
+            continue;
+        }
         bool mark = op["kind"].asString() == "mark";
         std::wstring text = Wide(op["text"].asString());
         const Json &replace = op["replace"];
@@ -721,6 +737,7 @@ void TextService::ApplyOps(TfEditCookie cookie, ITfContext *context, const Json 
                     if (SUCCEEDED(started) && composition_) {
                         compositionContext_ = context;
                         compositionContext_->AddRef();
+                        compositionStartedAt_ = GetTickCount();
                         if (Verbose()) Log("composition started");
                     } else {
                         Log("no composition (0x%08lx)", static_cast<unsigned long>(started));
@@ -741,11 +758,7 @@ void TextService::ApplyOps(TfEditCookie cookie, ITfContext *context, const Json 
                         EndComposition(cookie);
                     } else {
                         ApplyAttributes(cookie, context, range, converting);
-                        if (std::getenv("ARASO_INTERIM")) {
-                            SelectLastAsInterim(cookie, context, range);
-                        } else {
-                            MoveCaretToEnd(cookie, context, range);
-                        }
+                        MoveCaretToEnd(cookie, context, range);
                         range->Release();
                     }
                 }
@@ -781,6 +794,96 @@ void TextService::ApplyOps(TfEditCookie cookie, ITfContext *context, const Json 
     }
 }
 
+// MARK: The word kept here
+
+/// Whether words are kept here rather than composed in the field: in a classic app's context
+/// (CUAS marks it transitory), or an app seen ending compositions at once.
+bool TextService::Floats(ITfContext *context) {
+    if (appEndsCompositions_) return true;
+    TF_STATUS status = {};
+    return SUCCEEDED(context->GetStatus(&status)) && (status.dwStaticFlags & TF_SS_TRANSITORY);
+}
+
+void TextService::ClearFloating() {
+    floating_.clear();
+    SafeRelease(floatingContext_);
+}
+
+void TextService::InsertAtCaret(TfEditCookie cookie, ITfContext *context, const std::wstring &text) {
+    if (text.empty()) return;
+    ITfInsertAtSelection *insert = nullptr;
+    if (FAILED(context->QueryInterface(IID_ITfInsertAtSelection, reinterpret_cast<void **>(&insert)))) return;
+    ITfRange *inserted = nullptr;
+    if (SUCCEEDED(insert->InsertTextAtSelection(cookie, 0, text.c_str(), static_cast<LONG>(text.size()), &inserted)) &&
+        inserted) {
+        MoveCaretToEnd(cookie, context, inserted);
+        inserted->Release();
+    }
+    insert->Release();
+}
+
+/// One edit where words are kept here: the field holds what went in, `floating_` the word at the
+/// caret. Positions are the session's, which sees the word as composed there (`Snapshot`).
+void TextService::ApplyFloating(TfEditCookie cookie, ITfContext *context, const Json &op) {
+    bool mark = op["kind"].asString() == "mark";
+    std::wstring text = Wide(op["text"].asString());
+    if (floatingContext_ != context) {
+        ClearFloating();
+        floatingContext_ = context;
+        floatingContext_->AddRef();
+    }
+    LONG caret = 0, selected = 0;
+    TF_SELECTION selection = {};
+    ULONG fetched = 0;
+    if (SUCCEEDED(context->GetSelection(cookie, TF_DEFAULT_SELECTION, 1, &selection, &fetched)) && fetched) {
+        ITfRangeACP *acp = nullptr;
+        if (SUCCEEDED(selection.range->QueryInterface(IID_ITfRangeACP, reinterpret_cast<void **>(&acp)))) {
+            acp->GetExtent(&caret, &selected);
+            acp->Release();
+        }
+        selection.range->Release();
+    }
+    LONG kept = static_cast<LONG>(floating_.size());
+    if (kept) selected = 0;
+    LONG at = caret, length = kept ? kept : selected;
+    const Json &replace = op["replace"];
+    if (replace.isArray() && replace.size() == 2) {
+        at = replace[0].asInt();
+        length = replace[1].asInt();
+    }
+    // The part in the field (the word just committed, switched again; a selection typed over).
+    LONG fieldEnd = caret + selected;
+    if (at < fieldEnd) {
+        LONG inField = std::min(at + length, fieldEnd) - at;
+        ITfRange *range = RangeAt(cookie, context, at, inField);
+        bool whollyInField = at + length <= fieldEnd && !kept;
+        if (range) {
+            // An edit of what went in already, outside the word: made in the field.
+            range->SetText(cookie, 0, whollyInField && !mark ? text.c_str() : L"",
+                           whollyInField && !mark ? static_cast<LONG>(text.size()) : 0);
+            MoveCaretToEnd(cookie, context, range);
+            range->Release();
+        }
+        if (whollyInField && !mark) return;
+        length -= inField;
+        at = std::min(at + inField, caret);
+        caret = at;
+    }
+    // The part in the word kept here.
+    LONG offset = std::max(0L, std::min(at - caret, kept));
+    LONG covered = std::max(0L, std::min(length, kept - offset));
+    std::wstring before = floating_.substr(0, static_cast<size_t>(offset));
+    std::wstring after = floating_.substr(static_cast<size_t>(offset + covered));
+    if (mark) {
+        InsertAtCaret(cookie, context, before); // what the new word leaves before it went in
+        floating_ = text;
+    } else {
+        floating_.clear();
+        InsertAtCaret(cookie, context, before + text + after);
+    }
+    if (floating_.empty()) ClearFloating();
+}
+
 void TextService::ApplyAttributes(TfEditCookie cookie, ITfContext *context, ITfRange *range, bool converting) {
     ITfProperty *property = nullptr;
     if (FAILED(context->GetProperty(kGuidPropAttribute, &property)) || !property) return;
@@ -805,6 +908,11 @@ STDMETHODIMP TextService::OnCompositionTerminated(TfEditCookie cookie, ITfCompos
     // The app ended it (a click elsewhere): the text stays as it is, and the session starts afresh.
     if (composition_ && composition == composition_) {
         Log("the app ended the composition in %s", Utf8(app_).c_str());
+        // As soon as it started: an app that won't keep one, whatever its context said.
+        if (GetTickCount() - compositionStartedAt_ < 100 && !appEndsCompositions_) {
+            appEndsCompositions_ = true;
+            Log("%s ends compositions at once: words are drawn at the caret", Utf8(app_).c_str());
+        }
         ITfRange *range = nullptr;
         if (compositionContext_ && SUCCEEDED(composition_->GetRange(&range)) && range) {
             ClearAttributes(cookie, compositionContext_, range);

@@ -97,9 +97,18 @@ public final class ServiceRuntime {
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
 
     /// Builds the models (and loads the kanji dictionary) before the first key.
+    /// Loads what the first words would: the models and the converter, and whatever a session
+    /// reaches only when typed through (the first Korean word took over a second, past the text
+    /// service's wait).
     public func warmUp() {
         _ = engine.decide("warmup", context: DecisionContext())
         _ = converter?.candidates(for: "あ")
+        let session = makeSession()
+        let field = SnapshotClient.detached()
+        for word in ["dkssud", "hello", "kyouha"] {
+            for ch in word { _ = session.handle(.letter(ch), client: field) }
+            session.commit(client: field)
+        }
     }
 
     private static func makeEngine(japanese: Bool) -> DictionaryEngine {

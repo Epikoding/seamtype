@@ -56,6 +56,25 @@ private:
     static LRESULT CALLBACK Proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 };
 
+/// The word being typed, drawn at the caret, underlined: for classic apps (IMM32), which end a
+/// Korean input method's composition at once, so the word can't be composed in the text.
+class WordWindow {
+public:
+    /// Shows `text` over the caret's line (screen pixels).
+    void Show(const std::wstring &text, const RECT &caret);
+    void Hide();
+    /// Where it is on screen, while shown (the candidate window goes under it).
+    bool Shown(RECT &rect) const;
+
+private:
+    HWND window_ = nullptr;
+    std::wstring text_;
+    UINT dpi_ = 96;
+
+    void Paint(HDC dc);
+    static LRESULT CALLBACK Proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+};
+
 class PauseHud {
 public:
     /// Araso's icon under the caret for a moment, struck through when paused.

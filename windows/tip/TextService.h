@@ -97,6 +97,20 @@ private:
     /// (an app shown a key going up for a key it never saw go down may end the composition).
     bool keptDown_[256] = {};
 
+    /// Classic apps (IMM32, through Windows' compatibility layer, CUAS) end a Korean input method's
+    /// composition as soon as it starts. There the word being typed is kept here, shown to the
+    /// session as if composed at the caret and drawn there by the host, and goes in whole.
+    std::wstring floating_;
+    ITfContext *floatingContext_ = nullptr;
+    bool previewShown_ = false;
+    /// An app was seen ending a composition at once, where its context didn't say it would.
+    bool appEndsCompositions_ = false;
+    DWORD compositionStartedAt_ = 0;
+    bool Floats(ITfContext *context);
+    void ApplyFloating(TfEditCookie cookie, ITfContext *context, const Json &op);
+    void InsertAtCaret(TfEditCookie cookie, ITfContext *context, const std::wstring &text);
+    void ClearFloating();
+
     bool Takes(WPARAM wParam, bool down) const;
     bool HostTakes(WPARAM wParam, LPARAM lParam, bool up);
     void SeeModifier(ITfContext *context, WPARAM wParam, LPARAM lParam);
@@ -114,7 +128,6 @@ private:
     void ClearAttributes(TfEditCookie cookie, ITfContext *context, ITfRange *range);
     void EndComposition(TfEditCookie cookie);
     void MoveCaretToEnd(TfEditCookie cookie, ITfContext *context, ITfRange *range);
-    void SelectLastAsInterim(TfEditCookie cookie, ITfContext *context, ITfRange *range);
     ITfRange *RangeAt(TfEditCookie cookie, ITfContext *context, LONG start, LONG length);
     /// Sends a request whose answer carries edits, makes them and tells the host where things are.
     bool Exchange(TfEditCookie cookie, ITfContext *context, Json request, bool &handled, bool *replay = nullptr);

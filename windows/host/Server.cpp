@@ -210,6 +210,7 @@ std::string Server::Handle(const std::string &text, int &connectionClient) {
         if (op == "focus") HideAll();
         const Json &ui = response["ui"];
         if (op == "place") {
+            client.preview = Wide(request["preview"].asString());
             Draw(id);
         } else if (ui.isObject()) {
             client.ui = ui;
@@ -234,6 +235,15 @@ void Server::Draw(int id) {
     const Json &ui = client.ui;
     RECT anchor = client.hasWord ? client.word : client.caret;
     bool placed = client.hasWord || client.hasCaret;
+    if (!client.preview.empty() && client.hasCaret) {
+        word_.Show(client.preview, client.caret);
+        wordFor_ = id;
+        RECT shown;
+        if (word_.Shown(shown)) anchor = shown; // the candidates go under the word
+    } else if (wordFor_ == id) {
+        word_.Hide();
+        wordFor_ = 0;
+    }
     const Json &list = ui["candidates"];
     if (list.isObject() && placed) {
         std::vector<std::wstring> texts;
@@ -258,6 +268,8 @@ void Server::Draw(int id) {
 void Server::HideAll() {
     candidates_.Hide();
     shownFor_ = 0;
+    word_.Hide();
+    wordFor_ = 0;
 }
 
 /// The text services with edits waiting fetch them now.
@@ -276,7 +288,7 @@ void Server::Disconnected(int id) {
     detach.set("op", "detach");
     detach.set("client", id);
     Bridge::Shared().Request(detach);
-    if (shownFor_ == id) HideAll();
+    if (shownFor_ == id || wordFor_ == id) HideAll();
     clients_.erase(id);
 }
 

@@ -114,6 +114,10 @@ constexpr GUID kGuidAttrConverted = {0x6d6c7d5f, 0x3b7f, 0x4f0e, {0x9a, 0x2c, 0x
 constexpr GUID kGuidAttrTarget = {0x6d6c7d5f, 0x3b7f, 0x4f0e, {0x9a, 0x2c, 0x41, 0x72, 0x61, 0x73, 0x6f, 0x12}};
 
 /// Korean: the language the input method is listed under, as on macOS.
+#ifndef TF_SS_TRANSITORY
+#define TF_SS_TRANSITORY 0x4
+#endif
+
 constexpr LANGID kLangId = MAKELANGID(LANG_KOREAN, SUBLANG_KOREAN);
 
 extern HINSTANCE g_instance;

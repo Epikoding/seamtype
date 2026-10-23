@@ -29,12 +29,16 @@ private:
         bool hasCaret = false;
         /// What the last answer asked to draw, shown once the text service says where (`place`).
         Json ui;
+        /// The word being typed where the app can't show it composed (`place`'s `preview`).
+        std::wstring preview;
     };
 
     HWND window_ = nullptr;
     std::map<int, Client> clients_;
     CandidateWindow candidates_;
     PauseHud pause_;
+    WordWindow word_;
+    int wordFor_ = 0;
     int shownFor_ = 0;
     UINT pendingMessage_ = 0;
 
