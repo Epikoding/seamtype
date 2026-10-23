@@ -1,0 +1,8 @@
+// The version written into the binaries: made by CMake (configure_file) from ARASO_VERSION, and by
+// windows/scripts/check-cross.sh. Included by the C++ and the resource scripts alike, since
+// definitions on rc.exe's command line didn't reach it in MSVC's build (About said "Version 0").
+#ifndef ARASO_VERSION_H
+#define ARASO_VERSION_H
+#define ARASO_VERSION_STRING "@ARASO_VERSION@"
+#define ARASO_VERSION_COMMAS @ARASO_VERSION_COMMAS@
+#endif

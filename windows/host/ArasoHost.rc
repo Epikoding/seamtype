@@ -1,5 +1,6 @@
 #include <windows.h>
 #include "resource.h"
+#include "araso_version.h"
 
 IDI_HOST ICON "../Resources/Araso.ico"
 IDI_HOST_PAUSED ICON "../Resources/ArasoPaused.ico"

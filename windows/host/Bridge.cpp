@@ -1,5 +1,7 @@
 #include "Bridge.h"
 
+#include "araso_version.h"
+
 #include <cstdio>
 #include <vector>
 
@@ -32,28 +34,7 @@ std::wstring Bridge::SupportFolder() {
     return folder + L"\\Araso";
 }
 
-/// The version in this exe's version resource (FILEVERSION, from the build's ARASO_VERSION), which
-/// About shows and the update check compares. Read from the resource, not a string define: MSVC's
-/// build lost the define's quotes and About said "Version 0".
-std::string Bridge::Version() {
-    wchar_t exe[MAX_PATH] = L"";
-    GetModuleFileNameW(nullptr, exe, MAX_PATH);
-    DWORD ignored = 0;
-    DWORD size = GetFileVersionInfoSizeW(exe, &ignored);
-    if (size) {
-        std::vector<char> data(size);
-        VS_FIXEDFILEINFO *info = nullptr;
-        UINT length = 0;
-        if (GetFileVersionInfoW(exe, 0, size, data.data()) &&
-            VerQueryValueW(data.data(), L"\\", reinterpret_cast<void **>(&info), &length) && info) {
-            char text[48];
-            snprintf(text, sizeof text, "%u.%u.%u", HIWORD(info->dwFileVersionMS), LOWORD(info->dwFileVersionMS),
-                     HIWORD(info->dwFileVersionLS));
-            return text;
-        }
-    }
-    return "0.0.0";
-}
+std::string Bridge::Version() { return ARASO_VERSION_STRING; }
 
 bool Bridge::Start(std::wstring &error, bool converter) {
     if (request_) return true;
