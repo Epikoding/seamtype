@@ -221,6 +221,7 @@ std::string Server::Handle(const std::string &text, int &connectionClient) {
         } else if (op == "key" || op == "keyUp" || op == "pending" || op == "blur" || op == "terminated") {
             client.ui = Json();
             if (shownFor_ == id) candidates_.Hide();
+            readings_.Hide();
         }
     }
     Notify(response);
@@ -249,6 +250,20 @@ void Server::Draw(int id) {
     } else if (shownFor_ == id) {
         candidates_.Hide();
     }
+    // The readings a switch key went through, under the word; a correction that stuck, by the word.
+    const Json &readings = ui["readings"];
+    if (readings.isObject() && placed) {
+        std::vector<ReadingsWindow::Row> rows;
+        for (size_t k = 0; k < readings["texts"].size(); k++) {
+            rows.push_back({L(readings["tags"][k].asString().c_str()), Wide(readings["texts"][k].asString())});
+        }
+        readings_.Show(rows, readings["selected"].asInt(), readings["pick"].asInt(-1), readings["once"].asInt(-1), anchor);
+    } else {
+        readings_.Hide();
+    }
+    const Json &learned = ui["learned"];
+    if (learned.isObject() && client.hasWord) learned_.Show(learned["learning"].asString(), client.word);
+    client.ui.remove("learned");
     if (ui["paused"].isBool() && client.hasCaret) pause_.Show(ui["paused"].asBool(), client.caret);
     else if (ui["paused"].isBool() && placed) pause_.Show(ui["paused"].asBool(), anchor);
     // Shown once: the next answer says again what to draw.
@@ -257,6 +272,7 @@ void Server::Draw(int id) {
 
 void Server::HideAll() {
     candidates_.Hide();
+    readings_.Hide();
     shownFor_ = 0;
 }
 

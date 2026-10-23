@@ -34,6 +34,8 @@ private:
     HWND window_ = nullptr;
     std::map<int, Client> clients_;
     CandidateWindow candidates_;
+    ReadingsWindow readings_;
+    LearnedLine learned_;
     PauseHud pause_;
     int shownFor_ = 0;
     UINT pendingMessage_ = 0;

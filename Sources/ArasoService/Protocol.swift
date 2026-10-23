@@ -142,7 +142,8 @@ public struct Rects: Codable, Equatable, Sendable {
 public struct EditOp: Codable, Equatable, Sendable {
     public enum Kind: String, Codable, Sendable {
         /// Show `text` as the composition (start one if there is none), in place of `replace` when
-        /// given (text the app already has: the composition, if any, goes too).
+        /// given (text the app already has: the composition, if any, goes too), with `clause` (UTF-16,
+        /// within `text`) drawn as the clause the candidates are for and the rest as the reading.
         case mark
         /// Put `text` in: in place of `replace` when given, else of the composition (or the
         /// selection), and end the composition.
@@ -152,11 +153,13 @@ public struct EditOp: Codable, Equatable, Sendable {
     public var kind: Kind
     public var text: String
     public var replace: [Int]?
+    public var clause: [Int]?
 
-    public init(kind: Kind, text: String, replace: [Int]? = nil) {
+    public init(kind: Kind, text: String, replace: [Int]? = nil, clause: [Int]? = nil) {
         self.kind = kind
         self.text = text
         self.replace = replace
+        self.clause = clause
     }
 }
 
@@ -198,14 +201,34 @@ public struct MenuItem: Codable, Equatable, Sendable {
     public static let line = MenuItem(id: nil, title: "", enabled: false, separator: true)
 }
 
-/// What the host draws (the candidate window, the pause indicator) and does. Only the host reads it.
+/// What the host draws (the candidate window, the readings a switch key went through, the mark of a
+/// correction, the pause indicator) and does. Only the host reads it.
 public struct UIState: Codable, Equatable, Sendable {
     public struct Candidates: Codable, Equatable, Sendable {
         public var texts: [String]
         public var selected: Int
     }
 
+    public struct Readings: Codable, Equatable, Sendable {
+        public var texts: [String]
+        /// `EN`, `KO`, `JA`, `MIX` per reading (the host localizes them).
+        public var tags: [String]
+        public var selected: Int
+        /// The reading the keys go in as when left alone, and the one corrected once.
+        public var pick: Int?
+        public var once: Int?
+    }
+
+    public struct Learned: Codable, Equatable, Sendable {
+        public var text: String
+        public var tag: String
+        /// `once`, `forGood` or `forgot`.
+        public var learning: String
+    }
+
     public var candidates: Candidates?
+    public var readings: Readings?
+    public var learned: Learned?
     /// Set when the key paused or resumed the field: the indicator shows it.
     public var paused: Bool?
     /// A word is being typed.
@@ -222,7 +245,7 @@ public struct UIState: Codable, Equatable, Sendable {
 
     /// Nothing to draw or do: the text service then doesn't say where things are.
     public var isEmpty: Bool {
-        candidates == nil && paused == nil && trace == nil
+        candidates == nil && readings == nil && learned == nil && paused == nil && trace == nil
             && settingsChanged == nil && openSettings == nil
     }
 }
@@ -267,4 +290,16 @@ public struct ServiceResponse: Codable, Equatable, Sendable {
 public struct Choice: Codable, Equatable, Sendable {
     public var language: String
     public var text: String
+}
+
+extension Language {
+    /// The tag the readings list shows.
+    public var tag: String {
+        switch self {
+        case .english: return "EN"
+        case .korean: return "KO"
+        case .japanese: return "JA"
+        case .mixed: return "MIX"
+        }
+    }
 }

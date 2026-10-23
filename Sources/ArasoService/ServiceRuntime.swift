@@ -181,12 +181,7 @@ public final class ServiceRuntime {
         case .readings:
             response = ServiceResponse()
             let keys = request.keys ?? ""
-            var languages: [Language] = []
-            var language = Language.english
-            while !keys.isEmpty, !languages.contains(language) {
-                languages.append(language)
-                language = language.next(for: keys, japanese: settings.japanese)
-            }
+            let languages: [Language] = keys.isEmpty ? [] : Language.english.cycle(for: keys, japanese: settings.japanese)
             response.choices = languages.map { Choice(language: $0.rawValue, text: UserDictionary.reading(keys, as: $0)) }
         case .shortcut:
             response = ServiceResponse()
@@ -389,6 +384,19 @@ public final class ServiceRuntime {
         if let conversion = session.conversion {
             ui.candidates = UIState.Candidates(texts: conversion.candidates.map(\.text), selected: conversion.selected)
         }
+        if let readings = session.readings {
+            ui.readings = UIState.Readings(texts: readings.texts, tags: readings.languages.map(\.tag),
+                                           selected: readings.selected, pick: readings.pick, once: readings.once)
+        }
+        if let learned = session.learned {
+            let learning: String
+            switch learned.learning {
+            case .once: learning = "once"
+            case .forGood: learning = "forGood"
+            case .forgot: learning = "forgot"
+            }
+            ui.learned = UIState.Learned(text: learned.text, tag: learned.language.tag, learning: learning)
+        }
         ui.composing = field.markedRange().location != NSNotFound
     }
 
@@ -430,6 +438,14 @@ public final class ServiceRuntime {
         add("live", L("Live Conversion"), on: settings.liveConversion, enabled: settings.japanese, indent: 1)
         items.append(.line)
         if let keys = engine.lastLearned { add("undo", L("Undo Last Learned (%@)", keys)) }
+        // What the dictionary decided lately, to tell whether a word went in because of it and forget it.
+        let applied = engine.recentlyApplied
+        if !applied.isEmpty {
+            add(nil, L("Changed by the Dictionary"))
+            for word in applied {
+                add("forget:" + word.keys, L("%@ → %@ · Forget", word.text, Self.languageName(word.language)), indent: 1)
+            }
+        }
         if settings.checkForUpdates, let release = UpdateStore.available(current: configuration.version) {
             add("update", L("Update to Araso %@…", release.version))
         }
@@ -476,7 +492,10 @@ public final class ServiceRuntime {
         case "learning": ui.openSettings = "learning"
         case "settings": ui.openSettings = "general"
         default:
-            break
+            if item.hasPrefix("forget:") {
+                engine.forget(String(item.dropFirst("forget:".count)))
+                changedFiles = true
+            }
         }
     }
 

@@ -56,6 +56,48 @@ private:
     static LRESULT CALLBACK Proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 };
 
+/// The readings a switch key just went through (ReadingsHUD on macOS): a list under the word, each
+/// reading with its language tag, the one on screen highlighted; a filled pill on the tag of the
+/// reading the keys go in as when left alone, a dotted ring on one corrected once.
+class ReadingsWindow {
+public:
+    struct Row {
+        std::wstring tag;
+        std::wstring text;
+    };
+    void Show(const std::vector<Row> &rows, int selected, int pick, int once, const RECT &anchor);
+    void Hide();
+
+private:
+    HWND window_ = nullptr;
+    std::vector<Row> rows_;
+    int selected_ = 0, pick_ = -1, once_ = -1;
+    UINT dpi_ = 96;
+    int tagWidth_ = 0;
+
+    void Paint(HDC dc);
+    static LRESULT CALLBACK Proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+};
+
+/// A correction the dictionary just took (LearnedHUD on macOS), as a line under the word: gray dots
+/// drawn left to right after the first correction, a solid accent line with a streak of light once
+/// learned for good, a gray line taken back from the right when switching back forgot the word.
+class LearnedLine {
+public:
+    /// `learning`: "once", "forGood" or "forgot".
+    void Show(const std::string &learning, const RECT &word);
+
+private:
+    HWND window_ = nullptr;
+    std::string learning_;
+    DWORD started_ = 0;
+    int width_ = 0, height_ = 0;
+    UINT dpi_ = 96;
+
+    void Render();
+    static LRESULT CALLBACK Proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+};
+
 class PauseHud {
 public:
     /// Araso's icon under the caret for a moment, struck through when paused.

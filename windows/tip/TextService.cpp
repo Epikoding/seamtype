@@ -638,7 +638,7 @@ void TextService::ApplyOps(TfEditCookie cookie, ITfContext *context, const Json 
                         range->Release();
                         EndComposition(cookie);
                     } else {
-                        ApplyAttributes(cookie, context, range, converting);
+                        ApplyAttributes(cookie, context, range, converting, op["clause"]);
                         MoveCaretToEnd(cookie, context, range);
                         range->Release();
                     }
@@ -675,15 +675,30 @@ void TextService::ApplyOps(TfEditCookie cookie, ITfContext *context, const Json 
     }
 }
 
-void TextService::ApplyAttributes(TfEditCookie cookie, ITfContext *context, ITfRange *range, bool converting) {
+/// The word being typed underlined; a phrase being converted as its reading (thin), with the clause
+/// the candidates are for (`clause`, within the text) thick, as macOS draws its clauses.
+void TextService::ApplyAttributes(TfEditCookie cookie, ITfContext *context, ITfRange *range, bool converting,
+                                  const Json &clause) {
     ITfProperty *property = nullptr;
     if (FAILED(context->GetProperty(kGuidPropAttribute, &property)) || !property) return;
     VARIANT value;
     VariantInit(&value);
     value.vt = VT_I4;
-    // A phrase being converted is drawn as the clause the candidates are for (thick).
-    value.lVal = static_cast<LONG>(converting ? attrTarget_ : attrInput_);
+    bool clauses = clause.isArray() && clause.size() == 2 && clause[1].asInt() > 0;
+    value.lVal = static_cast<LONG>(clauses ? attrConverted_ : converting ? attrTarget_ : attrInput_);
     property->SetValue(cookie, range, &value);
+    if (clauses) {
+        ITfRange *selected = nullptr;
+        if (SUCCEEDED(range->Clone(&selected)) && selected) {
+            LONG moved = 0;
+            selected->Collapse(cookie, TF_ANCHOR_START);
+            selected->ShiftEnd(cookie, clause[0].asInt() + clause[1].asInt(), &moved, nullptr);
+            selected->ShiftStart(cookie, clause[0].asInt(), &moved, nullptr);
+            value.lVal = static_cast<LONG>(attrTarget_);
+            property->SetValue(cookie, selected, &value);
+            selected->Release();
+        }
+    }
     property->Release();
 }
 
