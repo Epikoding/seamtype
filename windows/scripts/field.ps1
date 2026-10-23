@@ -15,7 +15,7 @@ if ($Kind -eq "winforms") {
     $box.Font = New-Object System.Drawing.Font("Segoe UI", 14)
     $form.Controls.Add($box)
     $box.Add_TextChanged({ [IO.File]::WriteAllText($Out, $box.Text, [Text.Encoding]::UTF8) })
-    $form.Add_Shown({ $form.Activate(); $box.Focus() | Out-Null })
+    $form.Add_Shown({ $form.TopMost = $true; $form.Activate(); $box.Focus() | Out-Null; $form.TopMost = $false })
     [System.Windows.Forms.Application]::Run($form)
     return
 }
@@ -28,5 +28,6 @@ $box = New-Object System.Windows.Controls.TextBox
 $box.FontSize = 20
 $window.Content = $box
 $box.Add_TextChanged({ [IO.File]::WriteAllText($Out, $box.Text, [Text.Encoding]::UTF8) })
-$window.Add_ContentRendered({ $box.Focus() | Out-Null })
+# In front by itself: the typing test's window may not be allowed to bring it there.
+$window.Add_ContentRendered({ $window.Topmost = $true; $window.Activate() | Out-Null; $box.Focus() | Out-Null; $window.Topmost = $false })
 $window.ShowDialog() | Out-Null
