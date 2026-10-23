@@ -105,6 +105,8 @@ public final class InputSession {
         var numberPrefix = ""
 
         public var current: ConversionCandidate { candidates[selected] }
+        /// How many candidates the window shows at a time, numbered 1 to 9 for the digit keys.
+        public static let pageSize = 9
         /// What the user sees: the selected candidate, then any reading it doesn't cover.
         public var display: String { current.text + String(kana.dropFirst(current.kanaCount)) }
         /// The selected candidate's place in `display`: the clause being converted (今日は in
@@ -990,8 +992,10 @@ public final class InputSession {
             return true
 
         case .printable(let ch) where ch.isNumber:
-            if let n = ch.wholeNumberValue, n >= 1, n <= min(9, conversion.candidates.count) {
-                choose(n - 1, client: client)
+            // The digits number the page on show.
+            let start = conversion.selected / Conversion.pageSize * Conversion.pageSize
+            if let n = ch.wholeNumberValue, n >= 1, start + n - 1 < conversion.candidates.count {
+                choose(start + n - 1, client: client)
                 return true
             }
             commit(client: client)

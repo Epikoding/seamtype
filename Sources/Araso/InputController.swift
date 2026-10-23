@@ -6,11 +6,6 @@ import os
 
 private let log = Logger(subsystem: "com.nyttastudio.inputmethod.Araso", category: "input")
 
-/// The candidate window shared by all controllers (one is visible at a time).
-@MainActor var candidatesWindow: IMKCandidates?
-/// What the candidate window was last given: its list and the line it highlights.
-@MainActor private var candidatesShown: (texts: [String], selected: Int)?
-
 /// Adapts InputMethodKit to `InputSession`, which holds all the typing logic.
 @objc(ArasoInputController)
 final class InputController: IMKInputController {
@@ -87,7 +82,7 @@ final class InputController: IMKInputController {
     override func deactivateServer(_ sender: Any!) {
         MainActor.assumeIsolated {
             session.commit(client: textInput(sender).map(textClient))
-            candidatesWindow?.hide()
+            CandidatesHUD.hide()
             ReadingsHUD.hide(force: true)
             Runtime.shared.converter?.save()
         }
@@ -97,7 +92,7 @@ final class InputController: IMKInputController {
     override func commitComposition(_ sender: Any!) {
         MainActor.assumeIsolated {
             session.commitForNewContext(client: textInput(sender).map(textClient))
-            candidatesWindow?.hide()
+            CandidatesHUD.hide()
             ReadingsHUD.hide(force: true)
         }
     }
@@ -372,43 +367,14 @@ final class InputController: IMKInputController {
     // MARK: - Candidate window
 
     @MainActor private func syncCandidates() {
-        guard let conversion = session.conversion else {
-            candidatesWindow?.hide()
+        guard let conversion = session.conversion, let input: IMKTextInput = client() else {
+            CandidatesHUD.hide()
             return
         }
-        if candidatesWindow == nil {
-            candidatesWindow = IMKCandidates(server: server(), panelType: kIMKSingleColumnScrollingCandidatePanel)
-        }
-        guard let window = candidatesWindow else { return }
-        // The highlight is moved a line at a time: candidateIdentifier(atLineNumber:) returns 0
-        // for every line (macOS 27), so selectCandidate(withIdentifier:) never moved it.
-        let texts = conversion.candidates.map(\.text)
-        var line = 0
-        if let shown = candidatesShown, shown.texts == texts, window.isVisible() {
-            line = shown.selected
-        } else {
-            // A new list in the open window (a first clause made shorter): the panel kept its
-            // height with the rows gone, so it is hidden first and sized afresh.
-            if window.isVisible() { window.hide() }
-            window.update() // reloads the list and highlights the first line
-            window.show(kIMKLocateCandidatesBelowHint)
-        }
-        for _ in line..<max(line, conversion.selected) { window.moveDown(nil) }
-        for _ in conversion.selected..<max(conversion.selected, line) { window.moveUp(nil) }
-        candidatesShown = (texts, conversion.selected)
-    }
-
-    override func candidates(_ sender: Any!) -> [Any]! {
-        MainActor.assumeIsolated { session.conversion?.candidates.map(\.text) ?? [] }
-    }
-
-    override func candidateSelected(_ candidateString: NSAttributedString!) {
-        MainActor.assumeIsolated {
-            guard let conversion = session.conversion, let text = candidateString?.string,
-                  let index = conversion.candidates.firstIndex(where: { $0.text == text }),
-                  let input: IMKTextInput = client() else { return }
-            session.choose(index, client: textClient(input))
-            syncCandidates()
+        CandidatesHUD.show(conversion, caret: caretRect(input)) { [weak self] index in
+            guard let self, let input: IMKTextInput = self.client() else { return }
+            self.session.choose(index, client: self.textClient(input))
+            self.syncCandidates()
         }
     }
 

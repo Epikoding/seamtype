@@ -186,7 +186,7 @@ While a word is being typed it is underlined and shows the language Araso expect
 | --- | --- |
 | Space / ↓, ↑ | next / previous candidate |
 | ←, → | shorten / lengthen the first clause (`今日は｜いいてんき`) |
-| 1–9 | commit that candidate |
+| 1–9 | commit that candidate of the page shown |
 | Return | commit the selected candidate |
 | Esc / Delete | back to the kana |
 | letters, punctuation | commit, then keep typing |
@@ -195,7 +195,9 @@ Conversion goes clause by clause. The clause the candidates are for is underline
 of the reading thin, so you see where ←/→ put the boundary (apps that ignore underline styles show one
 line). A candidate that covers only the start of the reading (`今日は`
 for きょうはいいてんきですね) commits that part and keeps converting the rest. The candidate window lists
-every homophone the engine has, rare kanji toward the end (`硝` for しょう).
+every homophone the engine has, rare kanji toward the end (`硝` for しょう). It is the same Araso paper card
+as the switch key's list, under the clause with the candidates starting where the clause does: nine to a
+page, numbered, with the reading and the page under them; a click chooses one too.
 
 </details>
 
@@ -259,10 +261,11 @@ that way again. Correct the same keys the same way a second time and Araso alway
 particle after them (remember `ghostty` and you get `ghostty에`);
 switching a word back to Araso's own guess forgets it, and switching a remembered word to yet another
 reading moves the memory there the second time. The switch
-key's list has three marks: a sparkle (✦) at the end of the reading Araso picks, a filled pill on the
-language tag (`EN`, `KO`, `JA`) of the one the dictionary remembers (corrected twice, or a word you
-added yourself), and a dotted ring on one corrected once. Left alone, the keys go in as the pill's
-reading, or the sparkle's when there is no pill. The key after a correction folds the list to the
+key's list is an Araso paper card, each reading led by its script's letter (`A`, `아`, `あ`), and on the
+letter's shoulder, as tall as it, an icon may lean: a check (✓) on the reading the dictionary remembers
+(corrected twice, or a word you added yourself), a pencil (✎) on one corrected once, a sparkle (✦) on
+the one Araso picks. Left alone, the keys go in as the checked reading, or the sparkle's when there is
+none. The key after a correction folds the list to the
 chosen row, which says what happened for a moment: a pencil and **Once** after the first correction,
 a check and **Remembered** when the word is learned, Araso's sparkle and **Automatic** when switching
 back to Araso's pick forgot it.

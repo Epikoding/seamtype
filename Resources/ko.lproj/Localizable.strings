@@ -257,10 +257,6 @@
 "3-set final" = "세벌식 최종";
 "Readings, %@ selected" = "읽기 목록, %@ 선택됨";
 "%@ → always %@" = "%@ → 이제 늘 %@로";
-"EN" = "EN";
-"KO" = "한";
-"JA" = "日";
-"MIX" = "섞음";
 "Changed by the Dictionary" = "사전이 바꾼 단어";
 "%@ → %@ · Forget" = "%@ → %@ · 잊기";
 "%@ → %@, once" = "%@ → %@, 한 번 고침";
@@ -268,3 +264,4 @@
 "Automatic" = "자동으로";
 "Araso's choice" = "Araso가 고른 읽기";
 "Once" = "한 번";
+"Candidates, %@ selected" = "후보, %@ 선택됨";
