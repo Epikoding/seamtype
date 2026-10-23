@@ -5,6 +5,11 @@
 # Takes over the keyboard and the focus: run it on a machine nobody is using (the CI's).
 param([string]$Installer = "build/Araso-Setup.exe")
 $ErrorActionPreference = "Stop"
+# The text service and the host log here too (machine-wide, so Notepad and the host both see it).
+$log = Join-Path $env:TEMP "araso.log"
+[Environment]::SetEnvironmentVariable("ARASO_LOG", $log, "Machine")
+[Environment]::SetEnvironmentVariable("ARASO_LOG", $log, "User")
+$env:ARASO_LOG = $log
 
 Add-Type @"
 using System;
@@ -20,6 +25,8 @@ public static class Keys {
     [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr w, IntPtr l);
     [DllImport("input.dll", CharSet = CharSet.Unicode)] public static extern bool InstallLayoutOrTip(string profile, uint flags);
     [DllImport("input.dll", CharSet = CharSet.Unicode)] public static extern bool SetDefaultLayoutOrTip(string profile, uint flags);
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, IntPtr process);
+    [DllImport("user32.dll")] public static extern IntPtr GetKeyboardLayout(uint thread);
     const uint SCANCODE = 0x8, KEYUP = 0x2, EXTENDED = 0x1;
     public static void Key(ushort scan, bool up, bool extended) {
         var input = new INPUT[1];
@@ -48,9 +55,9 @@ $folder = "$env:ProgramFiles\Araso"
 if (-not (Test-Path "$folder\ArasoTip.dll")) { throw "not installed in $folder" }
 [Keys]::InstallLayoutOrTip($tip, 0) | Out-Null
 if (-not [Keys]::SetDefaultLayoutOrTip($tip, 0)) { Write-Host "SetDefaultLayoutOrTip failed" }
-if (-not (Get-Process ArasoHost -ErrorAction SilentlyContinue)) {
-    Start-Process -FilePath "$folder\ArasoHost.exe" -ArgumentList "--server"
-}
+# A host started by the installer doesn't have ARASO_LOG: start it afresh.
+Get-Process ArasoHost -ErrorAction SilentlyContinue | Stop-Process -Force
+Start-Process -FilePath "$folder\ArasoHost.exe" -ArgumentList "--server"
 Start-Sleep -Seconds 8   # the host warms its models up
 
 # Letters' scan codes on a US keyboard.
@@ -75,6 +82,10 @@ function Case([string]$keys, [string]$expected, [scriptblock]$after) {
     Start-Sleep -Milliseconds 500
     $edit = [Keys]::FindWindowEx($window, [IntPtr]::Zero, "Edit", $null)
     if ($edit -eq [IntPtr]::Zero) { $edit = [Keys]::FindWindowEx($window, [IntPtr]::Zero, "RichEditD2DPT", $null) }
+    $thread = [Keys]::GetWindowThreadProcessId($window, [IntPtr]::Zero)
+    $layout = "{0:X8}" -f [Keys]::GetKeyboardLayout($thread).ToInt64()
+    $loaded = (Get-Process -Id $notepad.Id).Modules | Where-Object { $_.ModuleName -eq "ArasoTip.dll" }
+    Write-Host "notepad: layout $layout, ArasoTip.dll $(if ($loaded) { 'loaded' } else { 'not loaded' })"
     Send-Keys $keys
     if ($after) { & $after }
     Start-Sleep -Milliseconds 800
@@ -97,6 +108,10 @@ $results = @(
     # Right Ctrl tapped alone pauses (0x1D extended): keys then go in as typed.
     (Case "" "dkssud " { Tap 0x1D; Send-Keys "dkssud " })
 )
+if (Test-Path $log) { Write-Host "--- araso.log"; Get-Content $log | Select-Object -Last 60 | Out-Host }
+reg query "HKCU\Software\Microsoft\CTF\TIP" /s 2>$null | Select-String -Pattern "6D6C7D5F" | Out-Host
+reg query "HKLM\Software\Microsoft\CTF\TIP\{6D6C7D5F-3B7F-4F0E-9A2C-417261736F01}" /s 2>$null | Select-Object -First 20 | Out-Host
+Get-WinUserLanguageList | Format-List | Out-Host
 if ($results -contains $false) {
     Get-ChildItem "$env:APPDATA\Araso" -ErrorAction SilentlyContinue | Select-Object Name | Out-Host
     throw "typing test failed"
