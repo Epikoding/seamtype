@@ -575,6 +575,11 @@ final class Harness {
         defer { araso_free(answer) }
         let response = try JSONDecoder().decode(ServiceResponse.self, from: Data(String(cString: answer).utf8))
         #expect(response.reply.client != nil)
+        // What the settings window shows as the version is the one the host started the runtime with.
+        let model = try #require(araso_request(#"{ "op": "settings" }"#))
+        defer { araso_free(model) }
+        let settings = try JSONDecoder().decode(ServiceResponse.self, from: Data(String(cString: model).utf8))
+        #expect(settings.settings?.version == "1.0")
         let bad = try #require(araso_request("not json"))
         defer { araso_free(bad) }
         #expect(String(cString: bad).contains("bad request"))
