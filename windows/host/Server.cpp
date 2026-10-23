@@ -65,6 +65,16 @@ SECURITY_ATTRIBUTES *PipeSecurity() {
     return &attributes;
 }
 
+/// GitHub's latest release (or ARASO_UPDATE_FEED's file), handed to the window in `parameter`.
+DWORD WINAPI FetchRelease(LPVOID parameter) {
+    wchar_t feed[1024] = L"";
+    std::wstring url = GetEnvironmentVariableW(L"ARASO_UPDATE_FEED", feed, 1024) ? feed : updater::kLatest;
+    auto *body = new std::string();
+    if (!updater::Get(url, *body)) body->clear();
+    PostMessageW(static_cast<HWND>(parameter), kReleaseMessage, 0, reinterpret_cast<LPARAM>(body));
+    return 0;
+}
+
 }  // namespace
 
 void Server::OpenSettings(const std::string &tab) {
@@ -286,15 +296,7 @@ void Server::CheckForUpdates(bool always) {
     if (!model["settings"]["checkForUpdates"].asBool(true)) return;
     double now = static_cast<double>(std::time(nullptr));
     if (!always && now - model["checked"].asNumber() < 24 * 60 * 60) return;
-    HWND window = window_;
-    CloseHandle(CreateThread(nullptr, 0, [](LPVOID parameter) -> DWORD {
-        wchar_t feed[1024] = L"";
-        std::wstring url = GetEnvironmentVariableW(L"ARASO_UPDATE_FEED", feed, 1024) ? feed : updater::kLatest;
-        auto *body = new std::string();
-        if (!updater::Get(url, *body)) body->clear();
-        PostMessageW(static_cast<HWND>(parameter), kReleaseMessage, 0, reinterpret_cast<LPARAM>(body));
-        return 0;
-    }, window, 0, nullptr));
+    CloseHandle(CreateThread(nullptr, 0, FetchRelease, window_, 0, nullptr));
 }
 
 LRESULT CALLBACK Server::Proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {

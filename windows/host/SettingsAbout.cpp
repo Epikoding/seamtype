@@ -21,6 +21,28 @@ void Open(const std::wstring &target) {
     ShellExecuteW(g.frame, L"open", target.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 }
 
+struct DownloadJob {
+    std::wstring url, path;
+    HWND window;
+};
+
+DWORD WINAPI DownloadInstaller(LPVOID parameter) {
+    auto *job = static_cast<DownloadJob *>(parameter);
+    auto *path = new std::wstring(updater::Download(job->url, job->path) ? job->path : L"");
+    PostMessageW(job->window, kDownloaded, 0, reinterpret_cast<LPARAM>(path));
+    delete job;
+    return 0;
+}
+
+DWORD WINAPI FetchRelease(LPVOID parameter) {
+    wchar_t feed[1024] = L"";
+    std::wstring url = GetEnvironmentVariableW(L"ARASO_UPDATE_FEED", feed, 1024) ? feed : updater::kLatest;
+    auto *body = new std::string();
+    if (!updater::Get(url, *body)) body->clear();
+    PostMessageW(static_cast<HWND>(parameter), kReleaseChecked, 0, reinterpret_cast<LPARAM>(body));
+    return 0;
+}
+
 /// Downloads the installer on a worker thread; `Downloaded` checks and opens it.
 void Install() {
     const Json &update = g.model["update"];
@@ -34,18 +56,8 @@ void Install() {
     g.busy = true;
     g.updateStatus = L("Downloading… The installer opens when it's done.");
     Rebuild();
-    struct Job {
-        std::wstring url, path;
-        HWND window;
-    };
-    auto *job = new Job{Wide(update["installer"].asString()), TempInstaller(update["version"].asString()), g.frame};
-    CloseHandle(CreateThread(nullptr, 0, [](LPVOID parameter) -> DWORD {
-        auto *job = static_cast<Job *>(parameter);
-        auto *path = new std::wstring(updater::Download(job->url, job->path) ? job->path : L"");
-        PostMessageW(job->window, kDownloaded, 0, reinterpret_cast<LPARAM>(path));
-        delete job;
-        return 0;
-    }, job, 0, nullptr));
+    auto *job = new DownloadJob{Wide(update["installer"].asString()), TempInstaller(update["version"].asString()), g.frame};
+    CloseHandle(CreateThread(nullptr, 0, DownloadInstaller, job, 0, nullptr));
 }
 
 }  // namespace
@@ -54,15 +66,7 @@ void CheckForUpdates() {
     if (g.busy) return;
     g.busy = true;
     g.updateStatus = L("Checking for updates…");
-    HWND window = g.frame;
-    CloseHandle(CreateThread(nullptr, 0, [](LPVOID parameter) -> DWORD {
-        wchar_t feed[1024] = L"";
-        std::wstring url = GetEnvironmentVariableW(L"ARASO_UPDATE_FEED", feed, 1024) ? feed : updater::kLatest;
-        auto *body = new std::string();
-        if (!updater::Get(url, *body)) body->clear();
-        PostMessageW(static_cast<HWND>(parameter), kReleaseChecked, 0, reinterpret_cast<LPARAM>(body));
-        return 0;
-    }, window, 0, nullptr));
+    CloseHandle(CreateThread(nullptr, 0, FetchRelease, g.frame, 0, nullptr));
 }
 
 void ReleaseChecked(std::string *body) {

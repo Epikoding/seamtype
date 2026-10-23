@@ -54,6 +54,15 @@ void FillWords() {
     }
 }
 
+/// The keys field of the add/edit window tells it each change (`data`: a std::function<void()>).
+LRESULT CALLBACK KeysChanged(HWND window, UINT message, WPARAM wParam, LPARAM lParam, UINT_PTR, DWORD_PTR data) {
+    LRESULT result = DefSubclassProc(window, message, wParam, lParam);
+    if (message == WM_CHAR || message == WM_KEYUP || message == WM_PASTE || message == WM_CUT) {
+        (*reinterpret_cast<std::function<void()> *>(data))();
+    }
+    return result;
+}
+
 const Json *SelectedWord() {
     int row = g.wordList ? Selected(g.wordList) : -1;
     return row >= 0 && row < static_cast<int>(g.shownWords.size()) ? &g.shownWords[row] : nullptr;
@@ -203,16 +212,11 @@ void EditWord(const Json *word, const std::string &keys) {
     dialog.Add(L"BUTTON", word ? L("Save") : L("Add"), BS_DEFPUSHBUTTON | WS_TABSTOP, 344, 330, 96, 30,
                [&dialog](HWND, int) { dialog.Close(true); });
     // The field reports its changes to the dialog.
-    SetWindowSubclass(field, [](HWND window, UINT message, WPARAM wParam, LPARAM lParam, UINT_PTR, DWORD_PTR data) -> LRESULT {
-        LRESULT result = DefSubclassProc(window, message, wParam, lParam);
-        if (message == WM_CHAR || message == WM_KEYUP || message == WM_PASTE || message == WM_CUT) {
-            (*reinterpret_cast<std::function<void()> *>(data))();
-        }
-        return result;
-    }, 1, reinterpret_cast<DWORD_PTR>(&refill));
+    std::function<void()> changed = refill;
+    SetWindowSubclass(field, KeysChanged, 1, reinterpret_cast<DWORD_PTR>(&changed));
     refill();
     bool accepted = dialog.Run();
-    RemoveWindowSubclass(field, nullptr, 1);
+    RemoveWindowSubclass(field, KeysChanged, 1);
     if (!accepted) return;
 
     wchar_t text[128] = L"";

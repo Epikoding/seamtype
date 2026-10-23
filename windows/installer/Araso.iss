@@ -72,7 +72,8 @@ Filename: "{app}\ArasoHost.exe"; Parameters: "--register"; Flags: runasoriginalu
 Filename: "{app}\ArasoHost.exe"; Parameters: "--server"; Flags: runasoriginaluser nowait
 
 [UninstallRun]
-Filename: "{app}\ArasoHost.exe"; Parameters: "--unregister"; Flags: runasoriginaluser runhidden waituntilterminated; RunOnceId: "Unregister"
+; The uninstaller runs elevated, as the user who installed it (runasoriginaluser is for [Run] only).
+Filename: "{app}\ArasoHost.exe"; Parameters: "--unregister"; Flags: runhidden waituntilterminated; RunOnceId: "Unregister"
 Filename: "{sys}\regsvr32.exe"; Parameters: "/u /s ""{app}\arm64\ArasoTip.dll"""; Flags: runhidden waituntilterminated; Check: IsArm64; RunOnceId: "UnregisterArm64"
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM ArasoHost.exe"; Flags: runhidden waituntilterminated; RunOnceId: "StopHost"
 
