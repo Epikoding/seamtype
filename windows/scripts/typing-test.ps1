@@ -70,6 +70,17 @@ public static class Keys {
         SetFocus(control);
         AttachThreadInput(GetCurrentThreadId(), thread, false);
     }
+    /// Brings a window to the front even when Windows' foreground lock would refuse: as the
+    /// window in front's own thread asks it.
+    public static bool Front(IntPtr window) {
+        IntPtr front = GetForegroundWindow();
+        uint thread = front == IntPtr.Zero ? 0 : GetWindowThreadProcessId(front, IntPtr.Zero);
+        uint own = GetCurrentThreadId();
+        if (thread != 0 && thread != own) AttachThreadInput(own, thread, true);
+        bool done = SetForegroundWindow(window);
+        if (thread != 0 && thread != own) AttachThreadInput(own, thread, false);
+        return done;
+    }
     public static string Text(IntPtr edit) {
         int length = (int)SendMessage(edit, 0x0E /* WM_GETTEXTLENGTH */, IntPtr.Zero, IntPtr.Zero);
         var text = new StringBuilder(length + 1);
@@ -173,13 +184,13 @@ function Case([string]$keys, [string]$expected, [scriptblock]$after, [string]$ki
     $field = Open-Field $kind
     $notepad = $field.process
     $window = $field.window
-    [Keys]::SetForegroundWindow($window) | Out-Null
+    [Keys]::Front($window) | Out-Null
     Start-Sleep -Milliseconds 800
     $thread = [Keys]::GetWindowThreadProcessId($window, [IntPtr]::Zero)
     $layout = "{0:X8}" -f [Keys]::GetKeyboardLayout($thread).ToInt64()
     $front = [Keys]::GetForegroundWindow() -eq $window
     for ($i = 0; $i -lt 10 -and -not $layout.EndsWith($script:language); $i++) {
-        [Keys]::SetForegroundWindow($window) | Out-Null
+        [Keys]::Front($window) | Out-Null
         # As the taskbar's indicator does: ask the window to switch to the language Araso is listed under.
         $hkl = [IntPtr][Convert]::ToInt64($script:language + $script:language, 16)
         [Keys]::PostMessage($window, 0x50 <# WM_INPUTLANGCHANGEREQUEST #>, [IntPtr]::Zero, $hkl) | Out-Null
@@ -191,6 +202,7 @@ function Case([string]$keys, [string]$expected, [scriptblock]$after, [string]$ki
     Send-Keys $keys
     if ($after) { & $after }
     Start-Sleep -Milliseconds 800
+    if ([Keys]::GetForegroundWindow() -ne $window) { Write-Host "${kind}: no longer in front after the keys" }
     $text = & $field.read
     Stop-Process -Id $notepad.Id -Force
     Write-Host "$kind typed '$keys' → '$text'"
@@ -234,7 +246,7 @@ $results = @(
 Case "hello " "ㅗ디ㅣㅐ " { Tap 0x38 } $classic | Out-Null
 
 Write-Host "machine: $env:PROCESSOR_ARCHITECTURE"
-if (Test-Path $log) { Write-Host "--- araso.log"; Get-Content $log | Select-String -NotMatch "test down|up kept" | Select-Object -Last 200 | Out-Host }
+if (Test-Path $log) { Write-Host "--- araso.log"; Get-Content $log | Select-String -NotMatch "scan code" | Select-Object -Last 400 | Out-Host }
 reg query "HKCU\Software\Microsoft\CTF\TIP" /s 2>$null | Select-String -Pattern "6D6C7D5F" | Out-Host
 reg query "HKLM\Software\Microsoft\CTF\TIP\{6D6C7D5F-3B7F-4F0E-9A2C-417261736F01}" /s 2>$null | Select-Object -First 20 | Out-Host
 Get-WinUserLanguageList | Format-List | Out-Host
