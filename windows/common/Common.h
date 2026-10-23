@@ -28,12 +28,14 @@ constexpr const wchar_t *kPendingMessage = L"Araso.Pending";
 constexpr const wchar_t *kHostWindowClass = L"ArasoHostWindow";
 constexpr const wchar_t *kSettingsWindowClass = L"ArasoSettingsWindow";
 constexpr const wchar_t *kHostMutex = L"Local\\Araso.Host";
+/// Posted by the text service in the settings window's process with a trace for Try Typing
+/// (lParam: JSON in a block of the process heap, which the window frees).
+constexpr const wchar_t *kTraceMessage = L"Araso.Trace";
 
 /// WM_COPYDATA kinds between the host and the settings window.
 enum CopyDataKind : ULONG_PTR {
     kCopyReload = 1,       // settings window → host: the files changed (data: "kanjiReset" or empty)
     kCopyFilesChanged = 2, // host → settings window: the menu changed the files
-    kCopyTrace = 3,        // host → settings window: how the word typed in Try Typing was decided (JSON)
     kCopyVim = 4,          // `--vim` → host: {"vim": mode, "app": exe}
     kCopyShowTab = 5,      // host → an open settings window: come forward on this pane
 };

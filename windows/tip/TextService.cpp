@@ -4,6 +4,7 @@
 #include "LangBarButton.h"
 
 #include <algorithm>
+#include <cstring>
 #include <new>
 
 namespace araso {
@@ -320,6 +321,25 @@ bool TextService::Exchange(TfEditCookie cookie, ITfContext *context, Json reques
     const Json &reply = response["reply"];
     handled = reply["handled"].asBool();
     ApplyOps(cookie, context, reply["ops"], reply["converting"].asBool());
+    // How Try Typing's word was decided: for the settings window, which is in this process (the host
+    // only says so to the text service in its own exe), handed over without waiting on anything.
+    const Json &trace = response["ui"]["trace"];
+    if (trace.isObject()) {
+        HWND settings = FindWindowW(kSettingsWindowClass, nullptr);
+        DWORD owner = 0;
+        if (settings) GetWindowThreadProcessId(settings, &owner);
+        if (owner == GetCurrentProcessId()) {
+            std::string text = trace.dump();
+            // The process heap: the settings window frees it, from another module.
+            char *copy = static_cast<char *>(HeapAlloc(GetProcessHeap(), 0, text.size() + 1));
+            if (copy) {
+                memcpy(copy, text.c_str(), text.size() + 1);
+                if (!PostMessageW(settings, RegisterWindowMessageW(kTraceMessage), 0, reinterpret_cast<LPARAM>(copy))) {
+                    HeapFree(GetProcessHeap(), 0, copy);
+                }
+            }
+        }
+    }
     // Where the word and the caret are now: the host places its windows there.
     if (response["ui"].isObject()) {
         Json place = Json::object();
@@ -426,7 +446,9 @@ Json TextService::Snapshot(TfEditCookie cookie, ITfContext *context, bool &maske
                 if (SUCCEEDED(acp->GetExtent(&compStart, &compLength)) && compLength > 0) composing = true;
                 acp->Release();
             }
-            if (composing) anchor = range; else range->Release();
+            // A copy to move about: the composition's own range must stay where it is.
+            if (composing) range->Clone(&anchor);
+            range->Release();
         }
     }
     if (composing) {

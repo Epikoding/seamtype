@@ -206,7 +206,6 @@ std::string Server::Handle(const std::string &text, int &connectionClient) {
             const Json &tab = ui["openSettings"];
             if (tab.isString()) OpenSettings(tab.asString());
             if (ui["settingsChanged"].asBool()) SendToSettings(kCopyFilesChanged, "");
-            if (ui["trace"].isObject()) SendToSettings(kCopyTrace, ui["trace"].dump());
             // A key's answer is drawn once the text service says where the word went (`place`).
             if (op != "key" && op != "keyUp" && op != "pending" && op != "blur") Draw(id);
         } else if (op == "key" || op == "keyUp" || op == "pending" || op == "blur" || op == "terminated") {

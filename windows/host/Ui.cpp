@@ -186,7 +186,7 @@ void CandidateWindow::Paint(HDC target) {
     DeleteObject(background);
 
     HFONT font = ui::Font(dpi_, 110);
-    HFONT small = ui::Font(dpi_, 85);
+    HFONT fine = ui::Font(dpi_, 85);
     SetBkMode(dc, TRANSPARENT);
     int pad = ui::Scale(4, dpi_);
     int rows = std::min(kRows, static_cast<int>(texts_.size()) - first_);
@@ -199,7 +199,7 @@ void CandidateWindow::Paint(HDC target) {
         RECT number = line;
         number.left += ui::Scale(8, dpi_);
         number.right = number.left + ui::Scale(18, dpi_);
-        SelectObject(dc, small);
+        SelectObject(dc, fine);
         SetTextColor(dc, on ? theme.accentText : theme.secondary);
         std::wstring digit = std::to_wstring(row + 1);
         DrawTextW(dc, digit.c_str(), -1, &number, DT_SINGLELINE | DT_VCENTER | DT_CENTER);
@@ -222,7 +222,7 @@ void CandidateWindow::Paint(HDC target) {
     SelectObject(dc, oldBitmap);
     DeleteObject(bitmap);
     DeleteObject(font);
-    DeleteObject(small);
+    DeleteObject(fine);
     DeleteDC(dc);
 }
 

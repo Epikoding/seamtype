@@ -5,6 +5,7 @@
 #include <windowsx.h>
 
 #include <algorithm>
+#include <cctype>
 #include <set>
 
 namespace araso {
@@ -161,7 +162,7 @@ void BuildKeys() {
                                 20, 16, 320, 48, nullptr, g.bold);
         HWND hint = dialog.Add(L"STATIC", L("Add Ctrl, Alt or Win: without one the key types. F-keys can go alone.") +
                                               L" " + L("Press Esc to cancel."),
-                               SS_NOPREFIX, 20, 72, 320, 48, nullptr, g.small);
+                               SS_NOPREFIX, 20, 72, 320, 48, nullptr, g.fine);
         WithoutInputMethod(field);
         Json chosen;
         dialog.TakeKeys(field, [&](WPARAM vk, LPARAM lParam) {

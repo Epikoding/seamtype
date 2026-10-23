@@ -45,7 +45,7 @@ int PaneIndex(const std::string &id) {
 }
 
 void MakeFonts() {
-    for (HFONT *font : {&g.font, &g.bold, &g.small, &g.title}) {
+    for (HFONT *font : {&g.font, &g.bold, &g.fine, &g.title}) {
         if (*font) DeleteObject(*font);
     }
     NONCLIENTMETRICSW metrics = {sizeof metrics};
@@ -58,7 +58,7 @@ void MakeFonts() {
         return CreateFontIndirectW(&font);
     };
     g.font = make(95, FW_NORMAL);
-    g.small = make(85, FW_NORMAL);
+    g.fine = make(85, FW_NORMAL);
     g.bold = make(95, FW_SEMIBOLD);
     g.title = make(150, FW_SEMIBOLD);
 }
@@ -161,8 +161,6 @@ LRESULT CALLBACK FrameProc(HWND window, UINT message, WPARAM wParam, LPARAM lPar
             // The input menu changed the files, or an update check came back.
             LoadModel();
             if (g.pane != PaneIndex("typing")) Rebuild();
-        } else if (copy->dwData == kCopyTrace) {
-            AddTrace(Json::parse(data));
         } else if (copy->dwData == kCopyShowTab) {
             ShowPane(PaneIndex(data));
             if (IsIconic(window)) ShowWindow(window, SW_RESTORE);
@@ -188,6 +186,13 @@ LRESULT CALLBACK FrameProc(HWND window, UINT message, WPARAM wParam, LPARAM lPar
     }
     case WM_DESTROY:
         PostQuitMessage(0);
+        return 0;
+    }
+    static const UINT traceMessage = RegisterWindowMessageW(kTraceMessage);
+    if (message == traceMessage && lParam) {
+        char *text = reinterpret_cast<char *>(lParam);
+        AddTrace(Json::parse(text));
+        HeapFree(GetProcessHeap(), 0, text);
         return 0;
     }
     return DefWindowProcW(window, message, wParam, lParam);
@@ -333,8 +338,8 @@ void Heading(const std::wstring &text) {
 
 void Note(const std::wstring &text, int indent) {
     int width = ContentWidth() - indent;
-    int h = TextHeight(text, g.small, width);
-    g.notes.insert(Make(L"STATIC", text, SS_NOPREFIX, Pad() + indent, g.y, width, h, g.small));
+    int h = TextHeight(text, g.fine, width);
+    g.notes.insert(Make(L"STATIC", text, SS_NOPREFIX, Pad() + indent, g.y, width, h, g.fine));
     g.y += h + S(8);
 }
 
@@ -511,7 +516,7 @@ int RunSettings(const std::string &tab) {
         return 0;
     }
     std::wstring error;
-    if (!Bridge::Shared().Start(error)) {
+    if (!Bridge::Shared().Start(error, false)) {
         MessageBoxW(nullptr, error.c_str(), L"Araso", MB_ICONERROR);
         return 1;
     }

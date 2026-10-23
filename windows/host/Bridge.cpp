@@ -37,7 +37,7 @@ std::string Bridge::Version() {
 #endif
 }
 
-bool Bridge::Start(std::wstring &error) {
+bool Bridge::Start(std::wstring &error, bool converter) {
     if (request_) return true;
     std::wstring folder = ExeFolder();
     // The Swift runtime DLLs sit beside the bridge; look there first.
@@ -66,6 +66,7 @@ bool Bridge::Start(std::wstring &error) {
     config.set("version", Version());
     config.set("language", Utf8(locale));
     config.set("ownApp", Utf8(ProcessName()));
+    config.set("converter", converter);
     if (start_(config.dump().c_str()) != 0) {
         error = L"ArasoBridge didn't start";
         request_ = nullptr;

@@ -14,7 +14,8 @@ class Bridge {
 public:
     /// Loads the DLL and starts the runtime with the install's resources and the user's settings
     /// folder. False (with `error`) when the DLL or the Swift runtime is missing.
-    bool Start(std::wstring &error);
+    /// `converter`: load the kanji converter too (the input method's host; the settings window doesn't).
+    bool Start(std::wstring &error, bool converter = true);
     void WarmUp();
     bool started() const { return request_ != nullptr; }
 

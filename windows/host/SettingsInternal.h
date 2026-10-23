@@ -23,7 +23,7 @@ struct State {
     HWND sidebar = nullptr;
     HWND content = nullptr;
     UINT dpi = 96;
-    HFONT font = nullptr, bold = nullptr, small = nullptr, title = nullptr;
+    HFONT font = nullptr, bold = nullptr, fine = nullptr, title = nullptr;
     int pane = 0;
     Json model;
     int nextId = 1000;

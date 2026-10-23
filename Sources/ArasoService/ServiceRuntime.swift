@@ -20,14 +20,27 @@ public final class ServiceRuntime {
         public var language: String
         /// The host's own exe name: its settings window's Try Typing field reports how words were decided.
         public var ownApp: String
+        /// Load the kanji converter (the input method's host). The settings window only edits files.
+        public var converter: Bool
 
         public init(resources: String? = nil, support: String? = nil, version: String = "0",
-                    language: String = "en", ownApp: String = "arasohost.exe") {
+                    language: String = "en", ownApp: String = "arasohost.exe", converter: Bool = true) {
             self.resources = resources
             self.support = support
             self.version = version
             self.language = language
             self.ownApp = ownApp
+            self.converter = converter
+        }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            resources = try c.decodeIfPresent(String.self, forKey: .resources)
+            support = try c.decodeIfPresent(String.self, forKey: .support)
+            version = try c.decodeIfPresent(String.self, forKey: .version) ?? "0"
+            language = try c.decodeIfPresent(String.self, forKey: .language) ?? "en"
+            ownApp = try c.decodeIfPresent(String.self, forKey: .ownApp) ?? "arasohost.exe"
+            converter = try c.decodeIfPresent(Bool.self, forKey: .converter) ?? true
         }
     }
 
@@ -76,7 +89,7 @@ public final class ServiceRuntime {
         KoreanLayout.active = settings.koreanLayout
         LatinLayout.activeRomaji = settings.japaneseLayout
         engine = Self.makeEngine(japanese: settings.japanese)
-        converter = settings.japanese ? Self.makeConverter(settings) : nil
+        converter = settings.japanese && configuration.converter ? Self.makeConverter(settings) : nil
     }
 
     /// The source tree (Sources/ArasoService/ServiceRuntime.swift), for UI text in development.
@@ -483,7 +496,7 @@ public final class ServiceRuntime {
         if new.japanese != settings.japanese {
             engine = Self.makeEngine(japanese: new.japanese)
         }
-        if new.japanese, converter == nil || new.japaneseEngine != settings.japaneseEngine {
+        if new.japanese, configuration.converter, converter == nil || new.japaneseEngine != settings.japaneseEngine {
             converter?.save()
             converter = Self.makeConverter(new)
         }
@@ -499,7 +512,7 @@ public final class ServiceRuntime {
         if kanjiReset {
             // Drop the converter without saving, so its memory doesn't come back.
             converter = nil
-            if settings.japanese { converter = Self.makeConverter(settings) }
+            if settings.japanese, configuration.converter { converter = Self.makeConverter(settings) }
         }
         engine.reload()
         apply(Settings.load())

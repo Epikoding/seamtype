@@ -148,7 +148,7 @@ void EditWord(const Json *word, const std::string &keys) {
     // The keys go in as typed, not through an input method (Araso's own included).
     WithoutInputMethod(field);
     dialog.Add(L"STATIC", L("Type the keys as you would on the English layout. They go in as typed, not through an input method."),
-               SS_NOPREFIX, 20, 68, 420, 36, nullptr, g.small);
+               SS_NOPREFIX, 20, 68, 420, 36, nullptr, g.fine);
     dialog.Add(L"STATIC", L("Comes out as"), SS_NOPREFIX, 20, 108, 420, 20, nullptr, g.bold);
     // Up to four readings, refilled as the keys change.
     HWND choices[4];
