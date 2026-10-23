@@ -44,6 +44,31 @@ public static class Keys {
         input[0].ki.dwFlags = up ? KEYUP : 0;
         SendInput(1, input, Marshal.SizeOf(typeof(INPUT)));
     }
+    delegate bool EnumProc(IntPtr window, IntPtr data);
+    [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, EnumProc proc, IntPtr data);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr window, StringBuilder name, int size);
+    [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr window, int index);
+    /// The first multi-line Edit control in a window (Try Typing's field in the settings window).
+    public static IntPtr FindMultilineEdit(IntPtr parent) {
+        IntPtr found = IntPtr.Zero;
+        EnumChildWindows(parent, (window, data) => {
+            var name = new StringBuilder(32);
+            GetClassName(window, name, 32);
+            if (name.ToString() == "Edit" && (GetWindowLong(window, -16) & 0x4) != 0) { found = window; return false; }
+            return true;
+        }, IntPtr.Zero);
+        return found;
+    }
+    [DllImport("user32.dll")] static extern bool AttachThreadInput(uint from, uint to, bool attach);
+    [DllImport("user32.dll")] static extern IntPtr SetFocus(IntPtr window);
+    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+    /// Gives a control in another app the keyboard focus, as a click in it would.
+    public static void Focus(IntPtr control) {
+        uint thread = GetWindowThreadProcessId(control, IntPtr.Zero);
+        AttachThreadInput(GetCurrentThreadId(), thread, true);
+        SetFocus(control);
+        AttachThreadInput(GetCurrentThreadId(), thread, false);
+    }
     public static string Text(IntPtr edit) {
         int length = (int)SendMessage(edit, 0x0E /* WM_GETTEXTLENGTH */, IntPtr.Zero, IntPtr.Zero);
         var text = new StringBuilder(length + 1);
@@ -89,6 +114,18 @@ function Send-Keys([string]$keys) {
 # A field to type into: Notepad (its Edit control, through IMM32's compatibility layer) or a WPF
 # TextBox (TSF's own). Answers what reads its text back.
 function Open-Field([string]$kind) {
+    if ($kind -eq "host") {
+        # Try Typing in Araso's settings window: an x64 app (under emulation on ARM64 Windows).
+        $process = Start-Process -FilePath "$folder\ArasoHost.exe" -ArgumentList "--settings", "typing" -PassThru
+        for ($i = 0; $i -lt 60 -and $process.MainWindowHandle -eq [IntPtr]::Zero; $i++) { Start-Sleep -Milliseconds 250; $process.Refresh() }
+        Start-Sleep -Seconds 2
+        $edit = [Keys]::FindMultilineEdit($process.MainWindowHandle)
+        if ($edit -eq [IntPtr]::Zero) { Write-Host "host: no Try Typing field" }
+        [Keys]::SetForegroundWindow($process.MainWindowHandle) | Out-Null
+        Start-Sleep -Milliseconds 300
+        [Keys]::Focus($edit)
+        return @{ process = $process; window = $process.MainWindowHandle; read = { [Keys]::Text($edit) }.GetNewClosure() }
+    }
     if ($kind -ne "notepad") {
         $out = Join-Path $env:TEMP "araso-field.txt"
         Remove-Item $out -ErrorAction SilentlyContinue
@@ -152,6 +189,8 @@ $results = @(
     (Case "dkssud hello " "안녕 hello " $null "wpf"),
     # Right Alt tapped alone switches the word just committed (0x38 extended: right Alt).
     (Case "hello " "ㅗ디ㅣㅐ " { Tap 0x38 } "wpf"),
+    # Try Typing in the settings window: an x64 app, also on ARM64 Windows.
+    (Case "dkssud hello " "안녕 hello " $null "host"),
     # A classic app's Edit control, where the word is drawn at the caret and goes in whole.
     (Case "dkssud hello " "안녕 hello " $null $classic),
     (Case "gksrmf " "한글 " $null $classic),
