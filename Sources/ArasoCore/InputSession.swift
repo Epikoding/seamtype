@@ -216,7 +216,16 @@ public final class InputSession {
     /// word starts or another key finishes it. A switch key still cycles it and Delete takes back
     /// only the boundary. Terminals can't give a finished word back (Ghostty reports its mouse
     /// selection as the caret), so this keeps the word on hand.
-    private var heldBoundary: Character?
+    private var heldBoundary: Character? {
+        didSet { if heldBoundary == nil { heldTyped = nil } }
+    }
+    /// The key as typed when `heldBoundary` is 3-set's symbol for it (B for ?): the boundary once
+    /// the word is switched out of Korean, as `Committed.typedBoundary` is.
+    private var heldTyped: Character?
+    /// The held boundary as it goes in after the word in `language`.
+    private func heldBoundary(in language: Language?) -> Character? {
+        language == .korean ? heldBoundary : heldTyped ?? heldBoundary
+    }
     /// The mode vim last reported (`vimChanged`), nil when no vim is reporting. In normal mode
     /// every key goes straight through; while vim reports at all, Esc is vim's.
     private var vimMode: VimSignal?
@@ -355,7 +364,9 @@ public final class InputSession {
         // a Korean word and after the symbols that follow one; anywhere else it is QWERTY's (Bob),
         // also after Hangul with stray jamo (kgb, 그ㅜ), which isn't a word.
         if let typed = key.character, let symbol = SebeolsikFinal.symbol(for: typed), KoreanLayout.current == .sebeolsikFinal,
-           heldBoundary == nil, !inURLRun, keys.isEmpty ? inKoreanSymbols : currentLanguage() == .korean && readsAsKoreanWord() {
+           !inURLRun, keys.isEmpty ? inKoreanSymbols
+               : heldBoundary.map { $0 != " " && currentLanguage() == .korean } ?? (currentLanguage() == .korean && readsAsKoreanWord()) {
+            if heldBoundary != nil { commit(client: client) } // the held word and its symbol go in, then this one
             typeKoreanSymbol(symbol, typed: typed, client)
             return true
         }
@@ -539,6 +550,8 @@ public final class InputSession {
                     if forced == nil { pinned = language }
                     heldBoundary = ch
                     updatePreview(client)
+                    afterKoreanSymbol = KoreanLayout.current == .sebeolsikFinal && language.sentenceLanguage == .korean
+                        && ch != " " && !inURLRun
                     return true
                 }
             }
@@ -617,9 +630,10 @@ public final class InputSession {
             return
         }
         guard !keys.isEmpty else { heldBoundary = nil; return }
-        let boundary = heldBoundary.map(String.init) ?? "" // a held word goes in with its space or symbol
+        let held = (boundary: heldBoundary, typed: heldTyped) // a held word goes in with its space or symbol
         heldBoundary = nil
         let word = finishWord()
+        let boundary = (word.language == .korean ? held.boundary : held.typed ?? held.boundary).map(String.init) ?? ""
         client?.insertText(word.text + boundary, replacing: nil)
         noteRun(word.text + boundary)
     }
@@ -636,6 +650,15 @@ public final class InputSession {
         afterKoreanSymbol = true
         afterDigit = symbol.isNumber // ⇧L⇧H is 30, and 0 after it a digit too
         passedRun = nil
+        if policy.holdSpace, !keys.isEmpty, Self.isBoundarySymbol(symbol) {
+            // Held as a symbol QWERTY types would be (see `heldBoundary`), so a switch key still
+            // changes it where the app can't give a committed word back (Ghostty).
+            if forced == nil { pinned = .korean }
+            heldBoundary = symbol
+            heldTyped = typed
+            updatePreview(client)
+            return
+        }
         if keys.isEmpty {
             client.insertText(String(symbol), replacing: nil)
             noteRun(String(symbol))
@@ -1346,7 +1369,7 @@ public final class InputSession {
 
     /// The word being composed as the marked text, with its boundary while it is held.
     private func show(_ text: String, _ client: TextClient) {
-        client.setMarkedText(heldBoundary.map { text + String($0) } ?? text)
+        client.setMarkedText(heldBoundary(in: previewLanguage).map { text + String($0) } ?? text)
     }
 
     /// An ASCII symbol that ends a word and is held with it in a `holdSpace` app: anything the
