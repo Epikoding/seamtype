@@ -39,6 +39,12 @@ public enum Resources {
         url("english_words.txt", development: packageRoot.appendingPathComponent("Sources/ArasoCore/Data/english_words.txt"))
     }
 
+    /// Webster's Second International (web2, public domain): the letter trigrams' spellings where
+    /// the system has no /usr/share/dict/words (Windows, Linux).
+    public static var englishSpelling: URL? {
+        url("english_spelling.txt", development: packageRoot.appendingPathComponent("Sources/ArasoCore/Data/english_spelling.txt"))
+    }
+
     /// Korean words seen in sentences, with counts (Tatoeba; build_korean_words.py).
     public static var koreanWords: URL? {
         url("korean_words.txt", development: packageRoot.appendingPathComponent("Sources/ArasoCore/Data/korean_words.txt"))
