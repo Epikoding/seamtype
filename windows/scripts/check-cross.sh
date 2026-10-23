@@ -20,6 +20,7 @@ zig c++ -target "$target" $flags -shared -o "$out/ArasoTip.dll" \
     tip/*.cpp common/Common.cpp common/Json.cpp "$out/ArasoTip.res" tip/ArasoTip.def \
     -lole32 -loleaut32 -luuid -luser32 -ladvapi32 -static-libgcc -static-libstdc++
 
+if [ ! -f host/Main.cpp ]; then echo "ok: $out (no host yet)"; exit 0; fi
 echo "host ($target)"
 zig rc /:target "$arch" /i host $(echo "/dARASO_VERSION_COMMAS=$commas") "/dARASO_VERSION_STRING=\"$version\"" /fo "$out/ArasoHost.res" -- host/ArasoHost.rc
 zig c++ -target "$target" $flags -mwindows -municode -o "$out/ArasoHost.exe" \

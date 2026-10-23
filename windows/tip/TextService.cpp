@@ -238,14 +238,30 @@ bool TextService::Takes(WPARAM vk, bool down) const {
     return true;
 }
 
-STDMETHODIMP TextService::OnTestKeyDown(ITfContext *, WPARAM wParam, LPARAM, BOOL *eaten) {
-    *eaten = Takes(wParam, true);
+/// A key with Ctrl, Alt or the Windows key (not a modifier itself): an app's shortcut unless the
+/// host says the session takes it, so the app's accelerators see it untouched.
+bool TextService::IsShortcut(WPARAM vk) const {
+    if (IsModifier(vk)) return false;
+    return GetKeyState(VK_CONTROL) < 0 || GetKeyState(VK_MENU) < 0 || GetKeyState(VK_LWIN) < 0 || GetKeyState(VK_RWIN) < 0;
+}
+
+bool TextService::HostTakes(WPARAM wParam, LPARAM lParam) {
+    Json request = Json::object();
+    request.set("op", "test");
+    request.set("key", KeyJson(wParam, lParam));
+    Json response;
+    return host_.Request(request, response, 200) && response["reply"]["handled"].asBool();
+}
+
+STDMETHODIMP TextService::OnTestKeyDown(ITfContext *, WPARAM wParam, LPARAM lParam, BOOL *eaten) {
+    *eaten = Takes(wParam, true) && (!IsShortcut(wParam) || HostTakes(wParam, lParam));
     return S_OK;
 }
 
 STDMETHODIMP TextService::OnKeyDown(ITfContext *context, WPARAM wParam, LPARAM lParam, BOOL *eaten) {
     *eaten = FALSE;
     if (!Takes(wParam, true)) return S_OK;
+    if (IsShortcut(wParam) && !HostTakes(wParam, lParam)) return S_OK;
     // A modifier held down repeats: only its first press counts.
     if (IsModifier(wParam) && (lParam & (1 << 30))) return S_OK;
     HandleKey(context, wParam, lParam, "key", eaten);
@@ -303,7 +319,7 @@ bool TextService::Exchange(TfEditCookie cookie, ITfContext *context, Json reques
     if (!host_.Request(request, response)) return false;
     const Json &reply = response["reply"];
     handled = reply["handled"].asBool();
-    ApplyOps(cookie, context, reply["ops"]);
+    ApplyOps(cookie, context, reply["ops"], reply["converting"].asBool());
     // Where the word and the caret are now: the host places its windows there.
     if (response["ui"].isObject()) {
         Json place = Json::object();
@@ -532,7 +548,7 @@ void TextService::EndComposition(TfEditCookie cookie) {
 
 /// The edits, in order: each replaces its range (else the composition, else the selection);
 /// `mark` leaves its text composed, `insert` puts it in for good.
-void TextService::ApplyOps(TfEditCookie cookie, ITfContext *context, const Json &ops) {
+void TextService::ApplyOps(TfEditCookie cookie, ITfContext *context, const Json &ops, bool converting) {
     for (const Json &op : ops.items()) {
         bool mark = op["kind"].asString() == "mark";
         std::wstring text = Wide(op["text"].asString());
@@ -578,7 +594,7 @@ void TextService::ApplyOps(TfEditCookie cookie, ITfContext *context, const Json 
                         range->Release();
                         EndComposition(cookie);
                     } else {
-                        ApplyAttributes(cookie, context, range, op["clause"]);
+                        ApplyAttributes(cookie, context, range, converting);
                         MoveCaretToEnd(cookie, context, range);
                         range->Release();
                     }
@@ -615,27 +631,15 @@ void TextService::ApplyOps(TfEditCookie cookie, ITfContext *context, const Json 
     }
 }
 
-void TextService::ApplyAttributes(TfEditCookie cookie, ITfContext *context, ITfRange *range, const Json &clause) {
+void TextService::ApplyAttributes(TfEditCookie cookie, ITfContext *context, ITfRange *range, bool converting) {
     ITfProperty *property = nullptr;
     if (FAILED(context->GetProperty(kGuidPropAttribute, &property)) || !property) return;
     VARIANT value;
     VariantInit(&value);
     value.vt = VT_I4;
-    bool converting = clause.isArray() && clause.size() == 2;
-    value.lVal = static_cast<LONG>(converting ? attrConverted_ : attrInput_);
+    // A phrase being converted is drawn as the clause the candidates are for (thick).
+    value.lVal = static_cast<LONG>(converting ? attrTarget_ : attrInput_);
     property->SetValue(cookie, range, &value);
-    if (converting && clause[1].asInt() > 0) {
-        ITfRange *selected = nullptr;
-        if (SUCCEEDED(range->Clone(&selected)) && selected) {
-            LONG moved = 0;
-            selected->Collapse(cookie, TF_ANCHOR_START);
-            selected->ShiftEnd(cookie, clause[0].asInt() + clause[1].asInt(), &moved, nullptr);
-            selected->ShiftStart(cookie, clause[0].asInt(), &moved, nullptr);
-            value.lVal = static_cast<LONG>(attrTarget_);
-            property->SetValue(cookie, selected, &value);
-            selected->Release();
-        }
-    }
     property->Release();
 }
 

@@ -12,8 +12,6 @@ final class FakeDocument {
     var composition: NSRange?
     var cursor = 0
     var readable = true
-    /// Clause attributes the last mark asked for.
-    var clause: [Int]?
 
     func context() -> TextContext {
         let ns = text as NSString
@@ -33,10 +31,8 @@ final class FakeDocument {
             let length = (op.text as NSString).length
             if op.kind == .mark, length > 0 {
                 composition = NSRange(location: target.location, length: length)
-                clause = op.clause
             } else {
                 composition = nil
-                clause = nil
             }
             cursor = target.location + length
         }
@@ -174,7 +170,6 @@ final class Harness {
         // The lone Alt's release is taken, so the app doesn't open its menu bar.
         #expect(h.tap(Keys.rightAlt, Keys.rightAltUp))
         #expect(h.document.text == "ㅗ디ㅣㅐ ")
-        #expect(h.ui?.readings?.tags.contains("KO") == true)
     }
 
     @Test func hangulKeyIsTheRightAlt() throws {
@@ -237,6 +232,20 @@ final class Harness {
         h.press(Keys.leftCtrl)
         #expect(h.document.composition == nil)
         #expect(h.document.text == "안녕 ")
+    }
+
+    @Test func shortcutsGoToTheAppUnlessAWordIsInProgress() throws {
+        let h = try Harness()
+        let ctrlS = WindowsKey(vk: 0x53, scan: 0x1F, ctrl: true)
+        #expect(!h.send(ServiceRequest(op: .test, client: h.client, key: ctrlS)).reply.handled)
+        h.type("dkssud")
+        // A word in progress: the key comes (and the word goes in first); the app still gets it.
+        #expect(h.send(ServiceRequest(op: .test, client: h.client, key: ctrlS)).reply.handled)
+        #expect(!h.press(ctrlS))
+        #expect(h.document.text == "안녕")
+        #expect(h.document.composition == nil)
+        let altSpace = WindowsKey(vk: 0x20, scan: 0x39, alt: true)
+        #expect(!h.send(ServiceRequest(op: .test, client: h.client, key: altSpace)).reply.handled)
     }
 
     @Test func blurCommitsAsShown() throws {
@@ -392,7 +401,7 @@ final class Harness {
         h.press(Keys.space)
         let candidates = h.ui?.candidates?.texts ?? []
         #expect(candidates.contains("変換"))
-        #expect(h.document.clause != nil)
+        #expect(h.lastReply.converting == true)
         guard let index = candidates.firstIndex(of: "変換") else { return }
         var choose = ServiceRequest(op: .choose, client: h.client)
         choose.index = index

@@ -1,0 +1,80 @@
+# The Windows input method (docs/windows-port.md): the Swift core and its tests on Windows, the
+# C++ text service and host with MSVC for every architecture, and the installer, left as an
+# artifact. The C++ is also cross-compiled with zig on Linux, as windows/scripts/check-cross.sh
+# does on a Mac.
+name: Windows
+
+on:
+  push:
+    branches: [main, 'aimdevlee/windows-*']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  swift:
+    runs-on: windows-latest
+    steps:
+      # The data files are read as they are in the repository.
+      - run: git config --global core.autocrlf false
+      - uses: compnerd/gha-setup-swift@main
+        with:
+          branch: swift-6.2-release
+          tag: 6.2-RELEASE
+      - uses: actions/checkout@v4
+      - run: swift --version
+      - name: Build
+        run: swift build --build-tests
+      - name: Test
+        run: swift test
+      - name: Bridge (release)
+        run: swift build -c release --product ArasoBridge
+      - name: Collect the bridge and the Swift runtime
+        shell: pwsh
+        run: |
+          $out = "build/swift"
+          New-Item -ItemType Directory -Force $out | Out-Null
+          Copy-Item .build/release/ArasoBridge.dll $out
+          # The Swift runtime the bridge needs, from the toolchain's redistributable folder.
+          $core = Get-ChildItem -Path "$env:LOCALAPPDATA\Programs\Swift", "$env:ProgramFiles\Swift", "C:\Library" -Recurse -Filter swiftCore.dll -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match 'Runtimes|bin' -and $_.FullName -match 'x86_64|usr\\bin' } | Select-Object -First 1
+          if (-not $core) { throw "swiftCore.dll not found" }
+          Write-Host "runtime: $($core.DirectoryName)"
+          Get-ChildItem $core.DirectoryName -Filter *.dll | Copy-Item -Destination $out
+          Get-ChildItem $out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: swift-x64
+          path: build/swift
+
+  cpp:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        arch: [x64, Win32, ARM64]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S windows -B build/windows -A ${{ matrix.arch }} -DARASO_HOST=${{ matrix.arch == 'Win32' && 'OFF' || 'ON' }}
+      - name: Build
+        run: cmake --build build/windows --config Release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cpp-${{ matrix.arch }}
+          path: |
+            build/windows/Release/*.dll
+            build/windows/Release/*.exe
+
+  cross:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+      - run: windows/scripts/check-cross.sh x86_64
+      - run: windows/scripts/check-cross.sh x86
+      - run: windows/scripts/check-cross.sh aarch64

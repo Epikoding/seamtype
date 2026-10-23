@@ -86,6 +86,8 @@ private:
     };
 
     bool Takes(WPARAM wParam, bool down) const;
+    bool IsShortcut(WPARAM vk) const;
+    bool HostTakes(WPARAM wParam, LPARAM lParam);
     void HandleKey(ITfContext *context, WPARAM wParam, LPARAM lParam, const char *op, BOOL *eaten);
     Json KeyJson(WPARAM wParam, LPARAM lParam) const;
     /// Runs `body` in an edit session on `context`: synchronously when `sync`, else when TSF can.
@@ -94,8 +96,8 @@ private:
     /// The field around the caret (`TextContext`), and whether it is a password field.
     Json Snapshot(TfEditCookie cookie, ITfContext *context, bool &masked);
     Json Rects(TfEditCookie cookie, ITfContext *context);
-    void ApplyOps(TfEditCookie cookie, ITfContext *context, const Json &ops);
-    void ApplyAttributes(TfEditCookie cookie, ITfContext *context, ITfRange *range, const Json &clause);
+    void ApplyOps(TfEditCookie cookie, ITfContext *context, const Json &ops, bool converting);
+    void ApplyAttributes(TfEditCookie cookie, ITfContext *context, ITfRange *range, bool converting);
     void ClearAttributes(TfEditCookie cookie, ITfContext *context, ITfRange *range);
     void EndComposition(TfEditCookie cookie);
     void MoveCaretToEnd(TfEditCookie cookie, ITfContext *context, ITfRange *range);

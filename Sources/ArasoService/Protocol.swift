@@ -17,6 +17,10 @@ public struct ServiceRequest: Codable, Sendable {
         case terminated
         /// A key went down (`key`).
         case key
+        /// A key with Ctrl, Alt or the Windows key, before it goes anywhere: whether the session takes
+        /// it (the pause shortcut, a switch key, a word in progress to finish first). If not, the app
+        /// gets it untouched (its accelerators work) and the session only hears of it, as on macOS.
+        case test
         /// A key went up: only modifiers matter (taps).
         case keyUp
         /// Edits the host started for this client (a click in the candidate window, a menu item).
@@ -135,8 +139,7 @@ public struct Rects: Codable, Equatable, Sendable {
 public struct EditOp: Codable, Equatable, Sendable {
     public enum Kind: String, Codable, Sendable {
         /// Show `text` as the composition (start one if there is none), in place of `replace` when
-        /// given (text the app already has: the composition, if any, goes too), with `clause` (UTF-16,
-        /// within `text`) drawn as the clause being converted.
+        /// given (text the app already has: the composition, if any, goes too).
         case mark
         /// Put `text` in: in place of `replace` when given, else of the composition (or the
         /// selection), and end the composition.
@@ -146,13 +149,11 @@ public struct EditOp: Codable, Equatable, Sendable {
     public var kind: Kind
     public var text: String
     public var replace: [Int]?
-    public var clause: [Int]?
 
-    public init(kind: Kind, text: String, replace: [Int]? = nil, clause: [Int]? = nil) {
+    public init(kind: Kind, text: String, replace: [Int]? = nil) {
         self.kind = kind
         self.text = text
         self.replace = replace
-        self.clause = clause
     }
 }
 
@@ -164,8 +165,8 @@ public struct ServiceReply: Codable, Equatable, Sendable {
     public var client: Int?
     /// The language bar menu.
     public var menu: [MenuItem]?
-    /// Whether the composition is a Japanese phrase being converted (the text service shows the
-    /// clause attributes) — informational.
+    /// Whether a Japanese phrase is being converted: the text service draws the composition as
+    /// converted text.
     public var converting: Bool?
 
     public init(handled: Bool = false, ops: [EditOp] = []) {
@@ -194,36 +195,17 @@ public struct MenuItem: Codable, Equatable, Sendable {
     public static let line = MenuItem(id: nil, title: "", enabled: false, separator: true)
 }
 
-/// What the host draws: the candidate window, the readings a switch key went through, the mark of a
-/// correction, the pause indicator. Only the host reads it.
+/// What the host draws (the candidate window, the pause indicator) and does. Only the host reads it.
 public struct UIState: Codable, Equatable, Sendable {
     public struct Candidates: Codable, Equatable, Sendable {
         public var texts: [String]
         public var selected: Int
     }
 
-    public struct Readings: Codable, Equatable, Sendable {
-        public var texts: [String]
-        /// `EN`, `KO`, `JA`, `MIX` per reading (the host localizes them).
-        public var tags: [String]
-        public var selected: Int
-        public var pick: Int?
-        public var once: Int?
-    }
-
-    public struct Learned: Codable, Equatable, Sendable {
-        public var text: String
-        public var tag: String
-        /// `once`, `forGood` or `forgot`.
-        public var learning: String
-    }
-
     public var candidates: Candidates?
-    public var readings: Readings?
-    public var learned: Learned?
     /// Set when the key paused or resumed the field: the indicator shows it.
     public var paused: Bool?
-    /// A word is being typed (the readings list then sits at the caret, not where the word was).
+    /// A word is being typed.
     public var composing = false
     /// How the word just decided was decided, for Try Typing (only in the settings window's field).
     public var trace: TraceInfo?
@@ -237,7 +219,7 @@ public struct UIState: Codable, Equatable, Sendable {
 
     /// Nothing to draw or do: the text service then doesn't say where things are.
     public var isEmpty: Bool {
-        candidates == nil && readings == nil && learned == nil && paused == nil && trace == nil
+        candidates == nil && paused == nil && trace == nil
             && settingsChanged == nil && openSettings == nil
     }
 }
@@ -277,16 +259,4 @@ public struct ServiceResponse: Codable, Equatable, Sendable {
 public struct Choice: Codable, Equatable, Sendable {
     public var language: String
     public var text: String
-}
-
-extension Language {
-    /// The tag the readings list shows.
-    public var tag: String {
-        switch self {
-        case .english: return "EN"
-        case .korean: return "KO"
-        case .japanese: return "JA"
-        case .mixed: return "MIX"
-        }
-    }
 }

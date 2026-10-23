@@ -40,10 +40,7 @@ public final class ServiceRuntime {
         /// Edits the host started (a click in the candidate window, a menu item), made the next
         /// time the text service asks with a fresh snapshot.
         var pending: [(InputSession, SnapshotClient) -> Void] = []
-        /// The word's place while it was last underlined, and the caret's (screen pixels).
-        var wordRect: [Int]?
-        var caretRect: [Int]?
-
+    
         init(session: InputSession, generation: Int) {
             self.session = session
             self.generation = generation
@@ -171,7 +168,12 @@ public final class ServiceRuntime {
         case .readings:
             response = ServiceResponse()
             let keys = request.keys ?? ""
-            let languages: [Language] = keys.isEmpty ? [] : Language.english.cycle(for: keys, japanese: settings.japanese)
+            var languages: [Language] = []
+            var language = Language.english
+            while !keys.isEmpty, !languages.contains(language) {
+                languages.append(language)
+                language = language.next(for: keys, japanese: settings.japanese)
+            }
             response.choices = languages.map { Choice(language: $0.rawValue, text: UserDictionary.reading(keys, as: $0)) }
         case .vim:
             response = ServiceResponse()
@@ -196,7 +198,6 @@ public final class ServiceRuntime {
 
     private func handle(_ request: ServiceRequest, client: Client, id: Int) -> ServiceResponse {
         let field = request.op == .terminated ? SnapshotClient.detached() : SnapshotClient(request.context)
-        if let rect = request.rects?.caret ?? nil { client.caretRect = rect }
         var reply = ServiceReply()
         var ui = UIState()
         let session = session(client, field)
@@ -219,6 +220,9 @@ public final class ServiceRuntime {
         case .key:
             guard let key = request.key else { break }
             reply.handled = handleKey(key, client: client, session: session, field: field, ui: &ui)
+        case .test:
+            guard let key = request.key else { break }
+            reply.handled = takes(key, session: session)
         case .keyUp:
             guard let key = request.key, let modifier = KeyMapper.modifier(key) else { break }
             switch client.taps.up(modifier, pauseKey: settings.pauseKey) {
@@ -226,7 +230,6 @@ public final class ServiceRuntime {
                 togglePause(session, field, ui: &ui)
             case .cycle?:
                 guard !session.inVimNormalMode else { break } // vim's own keys
-                noteWordRect(client, request)
                 _ = session.handle(.cycle, client: field)
                 // A lone Alt going up opens the app's menu bar: taken, so the app doesn't see it.
                 reply.handled = modifier == .rightAlt
@@ -238,7 +241,7 @@ public final class ServiceRuntime {
             client.pending.removeAll()
             for item in work { item(session, field) }
         case .place:
-            if let word = request.rects?.word { client.wordRect = word }
+            break // only the host uses where things are
         case .menu:
             reply.menu = menu(client: client, session: session)
         case .menuSelect:
@@ -308,6 +311,19 @@ public final class ServiceRuntime {
         return handled
     }
 
+    /// Whether a key with Ctrl, Alt or Win is the session's; one that isn't goes to the app, and
+    /// the session is told of it (a shortcut ends what it knew of the field: the run, the word just
+    /// committed). Asked more than once for one key, it answers the same.
+    private func takes(_ key: WindowsKey, session: InputSession) -> Bool {
+        if KeyMapper.modifier(key) != nil { return true }
+        if case .shortcut(let shortcut) = settings.pauseKey, let code = KeyMapper.macKeyCode(key),
+           shortcut.matches(keyCode: code, modifiers: KeyMapper.modifiers(key)) { return true }
+        let sessionKey = KeyMapper.sessionKey(key, policy: session.policy)
+        if sessionKey == .cycle || !session.keys.isEmpty || session.conversion != nil { return true }
+        _ = session.handle(sessionKey, client: SnapshotClient.detached())
+        return false
+    }
+
     /// Windows apps don't replace text (macOS's do, on Space or punctuation after a shortcut), so
     /// a word that went in as a shortcut is replaced here, as it goes in, when Space or a symbol
     /// ended it and goes to the app after it.
@@ -331,27 +347,10 @@ public final class ServiceRuntime {
         session.vimChanged(to: signal, client: field)
     }
 
-    private func noteWordRect(_ client: Client, _ request: ServiceRequest) {
-        if let word = request.rects?.word { client.wordRect = word }
-    }
-
     /// What the host draws after this request.
     private func fill(_ ui: inout UIState, client: Client, session: InputSession, field: SnapshotClient) {
         if let conversion = session.conversion {
             ui.candidates = UIState.Candidates(texts: conversion.candidates.map(\.text), selected: conversion.selected)
-        }
-        if let readings = session.readings {
-            ui.readings = UIState.Readings(texts: readings.texts, tags: readings.languages.map(\.tag),
-                                           selected: readings.selected, pick: readings.pick, once: readings.once)
-        }
-        if let learned = session.learned {
-            let learning: String
-            switch learned.learning {
-            case .once: learning = "once"
-            case .forGood: learning = "forGood"
-            case .forgot: learning = "forgot"
-            }
-            ui.learned = UIState.Learned(text: learned.text, tag: learned.language.tag, learning: learning)
         }
         ui.composing = field.markedRange().location != NSNotFound
     }
@@ -394,13 +393,6 @@ public final class ServiceRuntime {
         add("live", L("Live Conversion"), on: settings.liveConversion, enabled: settings.japanese, indent: 1)
         items.append(.line)
         if let keys = engine.lastLearned { add("undo", L("Undo Last Learned (%@)", keys)) }
-        let applied = engine.recentlyApplied
-        if !applied.isEmpty {
-            add(nil, L("Changed by the Dictionary"))
-            for word in applied {
-                add("forget:" + word.keys, L("%@ → %@ · Forget", word.text, Self.languageName(word.language)), indent: 1)
-            }
-        }
         if settings.checkForUpdates, let release = UpdateStore.available(current: configuration.version) {
             add("update", L("Update to Araso %@…", release.version))
         }
@@ -447,10 +439,7 @@ public final class ServiceRuntime {
         case "learning": ui.openSettings = "learning"
         case "settings": ui.openSettings = "general"
         default:
-            if item.hasPrefix("forget:") {
-                engine.forget(String(item.dropFirst("forget:".count)))
-                changedFiles = true
-            }
+            break
         }
     }
 

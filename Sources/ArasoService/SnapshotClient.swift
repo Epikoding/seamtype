@@ -48,22 +48,12 @@ public final class SnapshotClient: TextClient {
 
     public func setMarkedText(_ text: String) {
         let target = marked.location != NSNotFound ? marked : selection
-        mark(text, target, clause: nil)
+        mark(text, target)
     }
 
     public func setMarkedText(_ text: String, replacing range: NSRange) {
         let target = marked.location != NSNotFound ? NSUnionRange(range, marked) : range
-        mark(text, target, clause: nil)
-    }
-
-    public func setMarkedText(_ text: String, selectedClause: NSRange, replacing range: NSRange?) {
-        let target: NSRange
-        if let range {
-            target = marked.location != NSNotFound ? NSUnionRange(range, marked) : range
-        } else {
-            target = marked.location != NSNotFound ? marked : selection
-        }
-        mark(text, target, clause: selectedClause)
+        mark(text, target)
     }
 
     public func insertText(_ text: String, replacing range: NSRange?) {
@@ -96,15 +86,14 @@ public final class SnapshotClient: TextClient {
 
     // MARK: Applying
 
-    private func mark(_ text: String, _ target: NSRange, clause: NSRange?) {
+    private func mark(_ text: String, _ target: NSRange) {
         let resolved = replace(target, with: text)
         let length = utf16Count(text)
         if knowsPositions, resolved {
             marked = length > 0 ? NSRange(location: target.location, length: length) : Self.none
             selection = NSRange(location: target.location + length, length: 0)
         }
-        ops.append(EditOp(kind: .mark, text: text, replace: resolved ? [target.location, target.length] : nil,
-                          clause: clause.map { [$0.location, $0.length] }))
+        ops.append(EditOp(kind: .mark, text: text, replace: resolved ? [target.location, target.length] : nil))
     }
 
     /// Replaces `range` in the copy; false when the range isn't a place in it (positions unknown).
