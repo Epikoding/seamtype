@@ -11,10 +11,13 @@ New-Item -ItemType Directory -Force $work | Out-Null
 Set-Content "$work\empty.cpp" ""
 $exports = "DllGetClassObject", "DllCanUnloadNow", "DllRegisterServer", "DllUnregisterServer"
 function Def([string]$target) {
-    "EXPORTS`r`n" + (($exports | ForEach-Object { "    $_=$target.$_" }) -join "`r`n")
+    $lines = @("EXPORTS")
+    foreach ($name in $exports) { $lines += "    " + $name + "=" + $target + "." + $name }
+    return ($lines -join "`r`n") + "`r`n"
 }
-Set-Content "$work\arm64.def" (Def "ArasoTipArm64")
-Set-Content "$work\x64.def" (Def "ArasoTipX64")
+[IO.File]::WriteAllText("$work\arm64.def", (Def "ArasoTipArm64"))
+[IO.File]::WriteAllText("$work\x64.def", (Def "ArasoTipX64"))
+Get-Content "$work\arm64.def", "$work\x64.def" | Write-Host
 Push-Location $work
 try {
     cl /nologo /c /Zl /Foempty_arm64.obj empty.cpp
