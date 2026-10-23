@@ -6,12 +6,16 @@ import Foundation
 /// SPM resource bundles are avoided on purpose: their accessor looks for the bundle
 /// at the .app root, which is outside the signed Contents and breaks code signing.
 public enum Resources {
+    /// Set by a host that keeps the data files elsewhere (Windows: `Resources` beside ArasoHost.exe).
+    nonisolated(unsafe) public static var directory: URL?
+
     /// Source tree root, from this file's location (Sources/ArasoCore/Resources.swift).
     static let packageRoot = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
 
     static func url(_ name: String, development: URL) -> URL? {
         var candidates: [URL] = []
+        if let directory { candidates.append(directory.appendingPathComponent(name)) }
         if let resources = Bundle.main.resourceURL { candidates.append(resources.appendingPathComponent(name)) }
         if let dir = ProcessInfo.processInfo.environment["ARASO_RESOURCES"] {
             candidates.append(URL(fileURLWithPath: dir).appendingPathComponent(name))

@@ -82,7 +82,7 @@ final class Updater: ObservableObject {
         URLSession.shared.dataTask(with: request) { data, response, error in
             // A file (the updateFeed override) has no HTTP status.
             let status = (response as? HTTPURLResponse)?.statusCode ?? 200
-            let release = data.flatMap(Release.init(gitHubJSON:))
+            let release = data.flatMap { Release(gitHubJSON: $0) }
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     Updater.shared.finishCheck(release, failed: error != nil || status != 200)
