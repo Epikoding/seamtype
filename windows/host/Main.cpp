@@ -108,6 +108,12 @@ int SelfTest() {
         DWORD written = 0;
         const char *line = ok ? "selftest: ok\r\n" : "selftest: FAILED\r\n";
         WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), line, static_cast<DWORD>(strlen(line)), &written, nullptr);
+        // The version this exe was built as, and the one the settings model gives back (About's).
+        Json settings = Json::object();
+        settings.set("op", "settings");
+        std::string versions = "selftest: version " + Bridge::Version() + ", settings model " +
+                               Bridge::Shared().Request(settings)["settings"]["version"].dump() + "\r\n";
+        WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), versions.c_str(), static_cast<DWORD>(versions.size()), &written, nullptr);
     }
     return ok ? 0 : 1;
 }
