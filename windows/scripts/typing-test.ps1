@@ -27,6 +27,7 @@ public static class Keys {
     [DllImport("input.dll", CharSet = CharSet.Unicode)] public static extern bool SetDefaultLayoutOrTip(string profile, uint flags);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, IntPtr process);
     [DllImport("user32.dll")] public static extern IntPtr GetKeyboardLayout(uint thread);
+    [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr window, uint message, IntPtr w, IntPtr l);
     const uint SCANCODE = 0x8, KEYUP = 0x2, EXTENDED = 0x1;
     public static void Key(ushort scan, bool up, bool extended) {
         var input = new INPUT[1];
@@ -55,6 +56,8 @@ $folder = "$env:ProgramFiles\Araso"
 if (-not (Test-Path "$folder\ArasoTip.dll")) { throw "not installed in $folder" }
 [Keys]::InstallLayoutOrTip($tip, 0) | Out-Null
 if (-not [Keys]::SetDefaultLayoutOrTip($tip, 0)) { Write-Host "SetDefaultLayoutOrTip failed" }
+# A new window starts in the default input method only when it overrides the language list's first.
+Set-WinDefaultInputMethodOverride -InputTip $tip
 # A host started by the installer doesn't have ARASO_LOG: start it afresh.
 Get-Process ArasoHost -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Process -FilePath "$folder\ArasoHost.exe" -ArgumentList "--server"
@@ -84,6 +87,12 @@ function Case([string]$keys, [string]$expected, [scriptblock]$after) {
     if ($edit -eq [IntPtr]::Zero) { $edit = [Keys]::FindWindowEx($window, [IntPtr]::Zero, "RichEditD2DPT", $null) }
     $thread = [Keys]::GetWindowThreadProcessId($window, [IntPtr]::Zero)
     $layout = "{0:X8}" -f [Keys]::GetKeyboardLayout($thread).ToInt64()
+    if (-not $layout.EndsWith("0412")) {
+        # As the taskbar's indicator does: ask the window to switch to Korean, whose input method is Araso.
+        [Keys]::PostMessage($window, 0x50 <# WM_INPUTLANGCHANGEREQUEST #>, [IntPtr]::Zero, [IntPtr]0x04120412) | Out-Null
+        Start-Sleep -Milliseconds 800
+        $layout = "{0:X8}" -f [Keys]::GetKeyboardLayout($thread).ToInt64()
+    }
     $loaded = (Get-Process -Id $notepad.Id).Modules | Where-Object { $_.ModuleName -eq "ArasoTip.dll" }
     Write-Host "notepad: layout $layout, ArasoTip.dll $(if ($loaded) { 'loaded' } else { 'not loaded' })"
     Send-Keys $keys
