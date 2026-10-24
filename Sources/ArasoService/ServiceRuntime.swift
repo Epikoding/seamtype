@@ -294,6 +294,19 @@ public final class ServiceRuntime {
             if let index = request.index {
                 queue(id) { session, field in session.choose(index, client: field) }
             }
+        case .pick:
+            // As macOS's strip does: the switch key pressed until that reading is on screen, once
+            // round the readings at most (they can change as the word does).
+            if let index = request.index, let readings = session.readings, readings.languages.indices.contains(index),
+               index != readings.selected {
+                let language = readings.languages[index]
+                queue(id) { session, field in
+                    for _ in 0..<4 {
+                        guard let readings = session.readings, readings.languages[readings.selected] != language else { break }
+                        _ = session.handle(.cycle, client: field)
+                    }
+                }
+            }
         default:
             break
         }
@@ -435,12 +448,13 @@ public final class ServiceRuntime {
     /// What the host draws after this request.
     private func fill(_ ui: inout UIState, client: Client, session: InputSession, field: SnapshotClient) {
         if let conversion = session.conversion {
-            ui.candidates = UIState.Candidates(texts: conversion.candidates.map(\.text), selected: conversion.selected)
+            ui.candidates = UIState.Candidates(texts: conversion.candidates.map(\.text), selected: conversion.selected,
+                                               reading: conversion.kana)
         }
         if let readings = session.readings {
             ui.readings = UIState.Readings(texts: readings.texts, tags: readings.languages.map(\.tag),
-                                           selected: readings.selected, pick: readings.remembered ?? readings.own,
-                                           once: readings.once, own: readings.own, remembered: readings.remembered)
+                                           selected: readings.selected, remembered: readings.remembered,
+                                           once: readings.once)
         }
         if let learned = session.learned {
             let learning: String

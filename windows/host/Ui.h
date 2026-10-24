@@ -1,4 +1,4 @@
-// What the host draws by the caret: the kanji candidate window (IMKCandidates on macOS) and the
+// What the host draws by the caret, besides the strip (Strip.h): the word for classic apps and the
 // pause indicator (PauseHUD). Topmost windows that never take the focus from the app.
 #pragma once
 
@@ -31,72 +31,8 @@ HFONT Font(UINT dpi, int pointsTimesTen = 100, bool bold = false);
 RECT WorkAreaAt(const RECT &rect);
 /// Windows 11's rounded corners and shadow for a popup.
 void Round(HWND window);
-/// Draws a rounded rectangle, antialiased.
-void FillRounded(HDC dc, const RECT &rect, int radius, COLORREF color);
 
 }  // namespace ui
-
-class CandidateWindow {
-public:
-    /// Shows `texts` under `word` (screen pixels) with `selected` highlighted; a click chooses.
-    void Show(const std::vector<std::wstring> &texts, int selected, const RECT &word, std::function<void(int)> choose);
-    void Hide();
-
-private:
-    HWND window_ = nullptr;
-    std::vector<std::wstring> texts_;
-    int selected_ = 0;
-    int first_ = 0;
-    UINT dpi_ = 96;
-    std::function<void(int)> choose_;
-
-    static constexpr int kRows = 9;
-    int RowHeight() const;
-    void Paint(HDC dc);
-    static LRESULT CALLBACK Proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
-};
-
-/// The readings a switch key just went through (ReadingsHUD on macOS): a list under the word, each
-/// reading with its language tag, the one on screen highlighted; a filled pill on the tag of the
-/// reading the keys go in as when left alone, a dotted ring on one corrected once.
-class ReadingsWindow {
-public:
-    struct Row {
-        std::wstring tag;
-        std::wstring text;
-    };
-    void Show(const std::vector<Row> &rows, int selected, int pick, int once, const RECT &anchor);
-    void Hide();
-
-private:
-    HWND window_ = nullptr;
-    std::vector<Row> rows_;
-    int selected_ = 0, pick_ = -1, once_ = -1;
-    UINT dpi_ = 96;
-    int tagWidth_ = 0;
-
-    void Paint(HDC dc);
-    static LRESULT CALLBACK Proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
-};
-
-/// A correction the dictionary just took (LearnedHUD on macOS), as a line under the word: gray dots
-/// drawn left to right after the first correction, a solid accent line with a streak of light once
-/// learned for good, a gray line taken back from the right when switching back forgot the word.
-class LearnedLine {
-public:
-    /// `learning`: "once", "forGood" or "forgot".
-    void Show(const std::string &learning, const RECT &word);
-
-private:
-    HWND window_ = nullptr;
-    std::string learning_;
-    DWORD started_ = 0;
-    int width_ = 0, height_ = 0;
-    UINT dpi_ = 96;
-
-    void Render();
-    static LRESULT CALLBACK Proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
-};
 
 /// The word being typed, drawn at the caret, underlined: for classic apps (IMM32), which end a
 /// Korean input method's composition at once, so the word can't be composed in the text.
@@ -105,7 +41,7 @@ public:
     /// Shows `text` over the caret's line (screen pixels).
     void Show(const std::wstring &text, const RECT &caret);
     void Hide();
-    /// Where it is on screen, while shown (the candidate window goes under it).
+    /// Where it is on screen, while shown (the strip goes under it).
     bool Shown(RECT &rect) const;
 
 private:

@@ -5,6 +5,7 @@
 
 #include "../common/Common.h"
 #include "../common/Json.h"
+#include "Strip.h"
 #include "Ui.h"
 
 #include <map>
@@ -27,6 +28,10 @@ private:
         RECT caret = {};
         bool hasWord = false;
         bool hasCaret = false;
+        /// The word as it was when the last key was pressed, before that key changed it: the word
+        /// a correction was about, which that key put in.
+        RECT keyWord = {};
+        bool hasKeyWord = false;
         /// What the last answer asked to draw, shown once the text service says where (`place`).
         Json ui;
         /// The word being typed where the app can't show it composed (`place`'s `preview`).
@@ -35,13 +40,11 @@ private:
 
     HWND window_ = nullptr;
     std::map<int, Client> clients_;
-    CandidateWindow candidates_;
-    ReadingsWindow readings_;
-    LearnedLine learned_;
+    StripWindow strip_;
     PauseHud pause_;
     WordWindow word_;
     int wordFor_ = 0;
-    int shownFor_ = 0;
+    int stripFor_ = 0;
     UINT pendingMessage_ = 0;
 
     static LRESULT CALLBACK Proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);

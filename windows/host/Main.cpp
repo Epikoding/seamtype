@@ -15,8 +15,6 @@
 
 #include <commctrl.h>
 #include <objbase.h>
-#include <objidl.h>
-#include <gdiplus.h>
 #include <shellapi.h>
 
 #include <cstdio>
@@ -223,9 +221,6 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     INITCOMMONCONTROLSEX controls = {sizeof controls, ICC_STANDARD_CLASSES | ICC_LISTVIEW_CLASSES | ICC_TAB_CLASSES |
                                                        ICC_LINK_CLASS | ICC_BAR_CLASSES};
     InitCommonControlsEx(&controls);
-    ULONG_PTR gdiplus = 0;
-    Gdiplus::GdiplusStartupInput startup;
-    Gdiplus::GdiplusStartup(&gdiplus, &startup, nullptr);
 
     int result;
     if (Has(args, L"--selftest")) {
@@ -237,7 +232,6 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
         Server server;
         result = server.Run();
     }
-    Gdiplus::GdiplusShutdown(gdiplus);
     CoUninitialize();
     return result;
 }

@@ -353,6 +353,47 @@ final class Harness {
         #expect(h.document.text == "서울시 중구 ")
     }
 
+    @Test func aShortcutWithPhrasesOffersThemInTheCard() throws {
+        let h = try Harness(replacements: #"{ "주소": ["서울시 중구", "부산시 동구"] }"#)
+        h.type("wnth")
+        h.press(Keys.space)
+        // The phrases, then the shortcut as typed, with the shortcut under them.
+        #expect(h.ui?.candidates?.texts == ["서울시 중구", "부산시 동구", "주소"])
+        #expect(h.ui?.candidates?.reading == "주소")
+        var choose = ServiceRequest(op: .choose, client: h.client)
+        choose.index = 1
+        h.send(choose)
+        #expect(h.document.text == "부산시 동구 ")
+        #expect(h.document.composition == nil)
+    }
+
+    @Test func escapeTakesTheCardBackToTheShortcut() throws {
+        let h = try Harness(replacements: #"{ "주소": ["서울시 중구", "부산시 동구"] }"#)
+        h.type("wnth")
+        h.press(Keys.space)
+        h.press(Keys.escape)
+        #expect(h.ui?.candidates == nil)
+        #expect(h.document.text == "주소")
+        #expect(h.document.composition != nil)
+        h.press(Keys.space) // offered again
+        #expect(h.ui?.candidates?.texts.count == 3)
+    }
+
+    @Test func clickingAReadingSwitchesToIt() throws {
+        let h = try Harness()
+        h.type("hello ")
+        #expect(h.tap(Keys.rightAlt, Keys.rightAltUp))
+        guard let readings = h.ui?.readings, let english = readings.texts.firstIndex(of: "hello") else {
+            Issue.record("no readings")
+            return
+        }
+        var pick = ServiceRequest(op: .pick, client: h.client)
+        pick.index = english
+        h.send(pick)
+        #expect(h.document.text == "hello ")
+        #expect(h.ui?.readings?.texts[h.ui?.readings?.selected ?? -1] == "hello")
+    }
+
     @Test func maskedKeysGoThroughUnchangedWhenDisabled() throws {
         let h = try Harness(apps: #"{ "notepad.exe": { "enabled": false } }"#)
         h.type("dkssud ")

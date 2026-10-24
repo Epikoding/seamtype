@@ -12,7 +12,7 @@ new. This file maps each macOS piece to its Windows one and says where the two d
 │ ArasoTip.dll (C++, TSF)       │ ───────────> │ ArasoHost.exe --server (C++)             │
 │  key sink, composition,       │ JSON request │  ArasoBridge.dll (Swift: ArasoService    │
 │  display attributes, the      │ <─────────── │   over ArasoCore) makes every decision   │
-│  input indicator's menu       │  edits + UI  │  candidate window, pause indicator,      │
+│  input indicator's menu       │  edits + UI  │  the strip and candidate card, pause,    │
 │  x64, x86 and ARM64 builds    │              │  daily update check                      │
 └───────────────────────────────┘              └──────────────────────────────────────────┘
                                                 ArasoHost.exe --settings <tab>  (own process)
@@ -30,7 +30,7 @@ new. This file maps each macOS piece to its Windows one and says where the two d
   before them); `SnapshotClient` answers from it, applies each edit to its copy and records it with
   the range it replaces; the DLL makes the recorded edits in its edit session, in order.
   `Tests/ArasoServiceTests` drive the runtime the same way (`FakeDocument`).
-- **What only the host can start** (a click in the candidate window, a vim mode change that
+- **What only the host can start** (a click in the strip or the card, a vim mode change that
   commits, the menu's Pause) is queued for the client; the host posts `Araso.Pending` to the DLL's
   message-only window, and the DLL fetches and makes those edits in an edit session.
 - **A key kept is never lost.** TSF holds a text service to what `OnTestKeyDown` answered: a key
@@ -58,10 +58,8 @@ new. This file maps each macOS piece to its Windows one and says where the two d
 | IMKInputController, `handle(_:client:)` | `ITfKeyEventSink` (`windows/tip/TextService.cpp`) | Keys go to the host; a key the session doesn't take still reaches the app (Space after a word, as on macOS). |
 | `IMKClient` (`TextClient`) | `SnapshotClient` + edit sessions | UTF-16 offsets in both (NSRange ↔ ACP). A field without ACP positions still works, without the features that read back (a switch right after a commit, URLs). |
 | marked text, clause underlines | TSF composition + `ITfDisplayAttributeProvider` | Underlined, as macOS draws marked text; while converting, the reading thin and the clause the candidates are for thick. In classic apps, the host's `WordWindow` at the caret (see above). |
-| `IMKCandidates` | the host's candidate window (`windows/host/Ui.cpp`) | Numbered rows, the highlight moving with Space/↓/↑; a click chooses. |
+| `StripHUD` (`CaretPanel.swift`) | the host's `StripWindow` (`windows/host/Strip.cpp`) | The same strip on Araso's paper, drawn with Direct2D and DirectWrite in a layered window: the readings on one line under the word, a check after the remembered one and a pencil after one corrected once, a click switching to one (`pick`); the candidates in a card of nine under the clause, as wide as the widest on any page, the reading and the page under them, the next page coming up from below, a click choosing; after a correction, the capsule moving under the word's first letter with Noted, Learned or Reset. The thumb is Windows' accent color, the pencil and the arrow back Windows' icon font. |
 | `PauseHUD` | the host's `PauseHud` | Araso's icon under the caret for a moment, struck through when paused. |
-| `ReadingsHUD` | the host's `ReadingsWindow` | The readings a switch key went through, under the word, with their tags, the pill and the dotted ring. |
-| `LearnedHUD` | the host's `LearnedLine` | The line under the word after a correction: gray dots, the accent line with its streak, the gray line taken back. |
 | input menu (`menu()`) | the input indicator's menu (`LangBarButton`, `GUID_LBI_INPUTMODE`) | The same items and names, built by `ServiceRuntime.menu`, "Changed by the Dictionary" included. |
 | bundle identifier (`apps.json`) | exe name, lowercase (`notepad.exe`, `code.exe`) | A key ending in `.` still matches as a prefix. |
 | right ⌥ tap (switch key) | right Alt tap, or the 한/영 key | On Korean keyboards right Alt is 한/영 (`VK_HANGUL`), which switches as it goes down (some keyboards send no release for it). A lone right Alt's release is taken, so the app doesn't open its menu bar. |
@@ -85,13 +83,11 @@ new. This file maps each macOS piece to its Windows one and says where the two d
 
 ## Not on Windows
 
-- The paper card the macOS switch key's list and kanji candidates are drawn on (the script's
-  letter with a check, pencil or sparkle, the list folding to the chosen row): Windows draws the
-  list before it (language tags, a filled pill on the reading the keys go in as, a dotted ring on
-  one corrected once) and a plain numbered candidate list. `UIState.Readings` already carries
-  `own` and `remembered` for it.
+- The strip's shadow is a few rings of fading black rather than a blur (a layered window has no
+  Core Animation shadow), and its motion is drawn frame by frame on a 16 ms timer; Windows'
+  "Animation effects" off stills it, as Reduce motion does on macOS.
 - `scripts/typing-test`, `scripts/record-demo`: macOS automation.
-- UI-less mode for full-screen games (`ITfUIElement`): the candidate window is a topmost window,
+- UI-less mode for full-screen games (`ITfUIElement`): the strip and the card are a topmost window,
   which an exclusive full-screen game may hide.
 - What CI checks (`windows/scripts/typing-test.ps1`, on `windows-latest` and `windows-11-arm`):
   real key events into a WPF TextBox, Notepad's Edit control and the settings window's Try Typing

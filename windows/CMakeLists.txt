@@ -33,7 +33,7 @@ if(ARASO_HOST AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/host/Main.cpp")
   if(ARASO_PUBLISHER)
     target_compile_definitions(ArasoHost PRIVATE ARASO_PUBLISHER=L"${ARASO_PUBLISHER}")
   endif()
-  target_link_libraries(ArasoHost PRIVATE ole32 oleaut32 uuid user32 gdi32 gdiplus advapi32 shell32 comctl32
+  target_link_libraries(ArasoHost PRIVATE ole32 oleaut32 uuid user32 gdi32 d2d1 dwrite advapi32 shell32 comctl32
                         winhttp wintrust crypt32 dwmapi uxtheme shlwapi version imm32 shcore)
   if(MSVC)
     # The manifest is ArasoHost.rc's (PerMonitorV2, common controls 6), not the linker's own.

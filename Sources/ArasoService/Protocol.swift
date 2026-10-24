@@ -33,8 +33,11 @@ public struct ServiceRequest: Codable, Sendable {
         case menu
         /// A language bar menu item was chosen (`item`).
         case menuSelect
-        /// A candidate was clicked in the candidate window (`index`); sent by the host itself.
+        /// A candidate was clicked in the candidate card (`index`); sent by the host itself.
         case choose
+        /// A reading was clicked in the switch key's strip (`index`, of `UIState.Readings.texts`):
+        /// switched to as the switch key would, a press at a time; sent by the host itself.
+        case pick
         /// Vim changed mode (`vim`, with the terminal's exe in `app` when known).
         case vim
         /// The settings window changed the files (`kanjiReset` when it reset the kanji order).
@@ -210,12 +213,15 @@ public struct MenuItem: Codable, Equatable, Sendable {
     public static let line = MenuItem(id: nil, title: "", enabled: false, separator: true)
 }
 
-/// What the host draws (the candidate window, the readings a switch key went through, the mark of a
-/// correction, the pause indicator) and does. Only the host reads it.
+/// What the host draws (the candidate card, the strip of the readings a switch key went through and
+/// what a correction did, the pause indicator) and does. Only the host reads it.
 public struct UIState: Codable, Equatable, Sendable {
     public struct Candidates: Codable, Equatable, Sendable {
         public var texts: [String]
         public var selected: Int
+        /// The reading being converted (the shortcut, for a text replacement's phrases): the card's
+        /// footer, with the page.
+        public var reading: String
     }
 
     public struct Readings: Codable, Equatable, Sendable {
@@ -223,14 +229,10 @@ public struct UIState: Codable, Equatable, Sendable {
         /// `EN`, `KO`, `JA`, `MIX` per reading (the host localizes them).
         public var tags: [String]
         public var selected: Int
-        /// The reading the keys go in as when left alone (the remembered one, else Araso's own),
-        /// which the host marks with a filled pill, and the one corrected once (a dotted ring).
-        public var pick: Int?
-        public var once: Int?
-        /// Araso's own reading and the one the dictionary remembers, as macOS's list marks them
-        /// (a sparkle, a check); the Windows list doesn't draw them apart yet.
-        public var own: Int?
+        /// The reading the dictionary remembers (a check after it in the strip) and the one
+        /// corrected once (a pencil), as macOS's strip marks them.
         public var remembered: Int?
+        public var once: Int?
     }
 
     public struct Learned: Codable, Equatable, Sendable {

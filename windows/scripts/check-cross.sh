@@ -26,6 +26,6 @@ echo "host ($target)"
 zig rc /:target "$arch" /i host /i "$out" /fo "$out/ArasoHost.res" -- host/ArasoHost.rc
 zig c++ -target "$target" $flags -municode -Wl,--subsystem,windows -o "$out/ArasoHost.exe" \
     host/*.cpp common/Common.cpp common/Json.cpp "$out/ArasoHost.res" \
-    -lole32 -loleaut32 -luuid -luser32 -lgdi32 -lgdiplus -ladvapi32 -lshell32 -lcomctl32 -lwinhttp -lwintrust \
+    -lole32 -loleaut32 -luuid -luser32 -lgdi32 -ld2d1 -ldwrite -ladvapi32 -lshell32 -lcomctl32 -lwinhttp -lwintrust \
     -lcrypt32 -ldwmapi -luxtheme -lshlwapi -lversion -limm32 -lshcore
 echo "ok: $out"

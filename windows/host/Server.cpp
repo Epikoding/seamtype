@@ -204,6 +204,7 @@ std::string Server::Handle(const std::string &text, int &connectionClient) {
         Client &client = found->second;
         bool ok = false;
         RECT word = RectFrom(request["rects"]["word"], ok);
+        if (op == "key") { client.keyWord = word; client.hasKeyWord = ok; }
         if (ok) { client.word = word; client.hasWord = true; }
         RECT caret = RectFrom(request["rects"]["caret"], ok);
         if (ok) { client.caret = caret; client.hasCaret = true; }
@@ -221,8 +222,7 @@ std::string Server::Handle(const std::string &text, int &connectionClient) {
             if (op != "key" && op != "keyUp" && op != "pending" && op != "blur") Draw(id);
         } else if (op == "key" || op == "keyUp" || op == "pending" || op == "blur" || op == "terminated") {
             client.ui = Json();
-            if (shownFor_ == id) candidates_.Hide();
-            readings_.Hide();
+            if (stripFor_ == id) strip_.Hide();
         }
     }
     Notify(response);
@@ -245,35 +245,47 @@ void Server::Draw(int id) {
         word_.Hide();
         wordFor_ = 0;
     }
+    // One strip shows them all, so this is the one place that decides which: the candidates while a
+    // clause is converted, else the readings a switch key just went through, else what a
+    // correction did, by the word it was about.
     const Json &list = ui["candidates"];
+    const Json &readings = ui["readings"];
+    const Json &learned = ui["learned"];
+    auto ask = [this, id](const char *op, int index) {
+        Json request = Json::object();
+        request.set("op", op);
+        request.set("client", id);
+        request.set("index", index);
+        Notify(Bridge::Shared().Request(request));
+    };
     if (list.isObject() && placed) {
         std::vector<std::wstring> texts;
         for (const Json &text : list["texts"].items()) texts.push_back(Wide(text.asString()));
-        candidates_.Show(texts, list["selected"].asInt(), anchor, [this, id](int index) {
-            Json choose = Json::object();
-            choose.set("op", "choose");
-            choose.set("client", id);
-            choose.set("index", index);
-            Notify(Bridge::Shared().Request(choose));
-        });
-        shownFor_ = id;
-    } else if (shownFor_ == id) {
-        candidates_.Hide();
-    }
-    // The readings a switch key went through, under the word; a correction that stuck, by the word.
-    const Json &readings = ui["readings"];
-    if (readings.isObject() && placed) {
-        std::vector<ReadingsWindow::Row> rows;
+        strip_.ShowCandidates(texts, list["selected"].asInt(), Wide(list["reading"].asString()), anchor,
+                              [ask](int index) { ask("choose", index); });
+        stripFor_ = id;
+    } else if (readings.isObject() && placed) {
+        std::vector<std::wstring> texts;
+        std::vector<StripWindow::Mark> marks;
+        int remembered = readings["remembered"].asInt(-1), once = readings["once"].asInt(-1);
         for (size_t k = 0; k < readings["texts"].size(); k++) {
-            rows.push_back({L(readings["tags"][k].asString().c_str()), Wide(readings["texts"][k].asString())});
+            texts.push_back(Wide(readings["texts"][k].asString()));
+            int index = static_cast<int>(k);
+            marks.push_back(index == remembered ? StripWindow::Mark::remembered
+                            : index == once     ? StripWindow::Mark::once
+                                                : StripWindow::Mark::none);
         }
-        readings_.Show(rows, readings["selected"].asInt(), readings["pick"].asInt(-1), readings["once"].asInt(-1), anchor);
-    } else {
-        readings_.Hide();
+        strip_.ShowReadings(texts, marks, readings["selected"].asInt(), anchor, [ask](int index) { ask("pick", index); });
+        stripFor_ = id;
+    } else if (learned.isObject() && (client.hasKeyWord || client.hasWord)) {
+        strip_.Settle(Wide(learned["text"].asString()), learned["learning"].asString(),
+                      client.hasKeyWord ? client.keyWord : client.word);
+        stripFor_ = id;
+    } else if (stripFor_ == id) {
+        strip_.Hide();
     }
-    const Json &learned = ui["learned"];
-    if (learned.isObject() && client.hasWord) learned_.Show(learned["learning"].asString(), client.word);
     client.ui.remove("learned");
+    if (ui["paused"].isBool()) strip_.Hide(true);
     if (ui["paused"].isBool() && client.hasCaret) pause_.Show(ui["paused"].asBool(), client.caret);
     else if (ui["paused"].isBool() && placed) pause_.Show(ui["paused"].asBool(), anchor);
     // Shown once: the next answer says again what to draw.
@@ -281,9 +293,8 @@ void Server::Draw(int id) {
 }
 
 void Server::HideAll() {
-    candidates_.Hide();
-    readings_.Hide();
-    shownFor_ = 0;
+    strip_.Hide(true);
+    stripFor_ = 0;
     word_.Hide();
     wordFor_ = 0;
 }
@@ -304,7 +315,7 @@ void Server::Disconnected(int id) {
     detach.set("op", "detach");
     detach.set("client", id);
     Bridge::Shared().Request(detach);
-    if (shownFor_ == id || wordFor_ == id) HideAll();
+    if (stripFor_ == id || wordFor_ == id) HideAll();
     clients_.erase(id);
 }
 
