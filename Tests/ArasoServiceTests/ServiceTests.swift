@@ -353,6 +353,39 @@ final class Harness {
         #expect(h.document.text == "서울시 중구 ")
     }
 
+    @Test func backspaceOnAConversionCommitsAllButItsLastCharacter() throws {
+        guard Resources.japaneseDictionary != nil else { return }
+        let h = try Harness(settings: #"{ "japanese": true, "liveConversion": false }"#)
+        h.type("henkan ")
+        #expect(h.document.text == "変換")
+        // Kept from the app while converting, and it ends the conversion less its last character.
+        #expect(h.send(ServiceRequest(op: .test, client: h.client, key: Keys.back)).reply.handled)
+        #expect(h.press(Keys.back))
+        #expect(h.document.text == "変")
+        #expect(h.document.composition == nil)
+        #expect(h.ui?.candidates == nil)
+    }
+
+    @Test func backspaceInLiveConversionTypesThePhraseAgain() throws {
+        guard Resources.japaneseDictionary != nil else { return }
+        let h = try Harness(settings: #"{ "japanese": true, "liveConversion": true }"#)
+        h.type("kyouhaiitenkidesune")
+        #expect(h.document.text == "今日はいい天気ですね")
+        h.press(Keys.back)
+        #expect(h.document.text == "今日はいいてんきです")
+        #expect(h.document.composition != nil)
+    }
+
+    @Test func liveConversionSpaceAfterAPendingLetterShowsTheFirstCandidate() throws {
+        guard Resources.japaneseDictionary != nil else { return }
+        let h = try Harness(settings: #"{ "japanese": true, "liveConversion": true }"#)
+        h.type("henkan")
+        #expect(h.document.text == "変化n") // live conversion's, the n waiting for its vowel
+        h.press(Keys.space)
+        #expect(h.document.text == "変換")
+        #expect(h.ui?.candidates?.texts[h.ui?.candidates?.selected ?? -1] == "変換")
+    }
+
     @Test func aShortcutWithPhrasesOffersThemInTheCard() throws {
         let h = try Harness(replacements: #"{ "주소": ["서울시 중구", "부산시 동구"] }"#)
         h.type("wnth")
