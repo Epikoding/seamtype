@@ -21,6 +21,13 @@ int LatinIndex(const std::string &layout) {
     return 0;
 }
 
+const char *kKoreanLayouts[] = {"dubeolsik", "sebeolsikFinal", "sebeolsik390"};
+
+int KoreanIndex(const std::string &layout) {
+    for (int k = 0; k < 3; k++) if (layout == kKoreanLayouts[k]) return k;
+    return 0;
+}
+
 double Strict() { return g.model["strictThreshold"].asNumber(0.97); }
 
 }  // namespace
@@ -44,9 +51,9 @@ void BuildLanguages() {
     Note(L("Type Japanese with romaji; Space converts to kanji."), S(20));
 
     Heading(L("Layouts"));
-    Combo(L("Hangul"), {L("2-set"), L("3-set final")}, settings["koreanLayout"].asString() == "sebeolsikFinal" ? 1 : 0,
+    Combo(L("Hangul"), {L("2-set"), L("3-set final"), L("3-set 390")}, KoreanIndex(settings["koreanLayout"].asString()),
           true, [](int index) {
-              ChangeSettings([index](Json &s) { s.set("koreanLayout", index == 1 ? "sebeolsikFinal" : "dubeolsik"); });
+              ChangeSettings([index](Json &s) { s.set("koreanLayout", kKoreanLayouts[std::max(0, index)]); });
           });
     Note(L("3-set types jamo on the digit and symbol keys too; a number on its own stays a number."), S(160));
     int latin = LatinIndex(settings["latinLayout"].asString());
