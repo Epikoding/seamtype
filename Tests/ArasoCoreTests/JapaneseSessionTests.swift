@@ -241,6 +241,103 @@ import Testing
         #expect(field.text == "きった")
     }
 
+    /// Without live conversion, Delete on a conversion commits it less its last character, as
+    /// macOS's Japanese input does (変換 → 変); the next Delete is the app's.
+    @Test func deleteInConversionCommitsAllButTheLastCharacter() {
+        type("henkan ")
+        #expect(field.text == "変換")
+        #expect(session.handle(.delete, client: field))
+        #expect(field.text == "変" && field.marked.location == NSNotFound)
+        #expect(session.conversion == nil && session.keys.isEmpty)
+        #expect(converter.learned.isEmpty)
+        #expect(!session.handle(.delete, client: field))
+        field.text = String(field.text.dropLast()); field.cursor = (field.text as NSString).length // the app's Delete
+        type("kidesu")
+        session.handle(.enter, client: field)
+        #expect(field.text == "きです") // a new word after what went in
+        type("kyouhaiitenkidesune ")
+        session.handle(.delete, client: field)
+        #expect(field.text == "きです今日はいい天気です")
+    }
+
+    @Test func deleteInConversionTakesTheNumberWithIt() {
+        type("henkan ")
+        session.handle(.enter, client: field)
+        type("3ji ")
+        #expect(field.text == "変換3時")
+        session.handle(.delete, client: field)
+        #expect(field.text == "変換3" && session.conversion == nil)
+    }
+
+    /// With live conversion, Delete on a conversion goes back to typing the phrase, as macOS's
+    /// does: its last clause as kana less the last one, the clauses before it as they were shown.
+    @Test func deleteInLiveConversionKeepsTheClausesBefore() {
+        let session = InputSession(engine: session.engine, converter: converter, japaneseEnabled: true, liveConversion: true)
+        for ch in "kyouhaiitenkidesune" { _ = session.handle(.letter(ch), client: field) }
+        #expect(field.text == "今日はいい天気ですね")
+        _ = session.handle(.printable(" "), client: field)
+        #expect(field.text == "今日はいいてんきですね") // the next candidate covers 今日は only
+        #expect(session.handle(.delete, client: field))
+        #expect(session.conversion == nil)
+        #expect(field.text == "きょうはいいてんきです") // 今日は|いいてんきですね: no clause before 今日は
+        _ = session.handle(.escape, client: field)
+        _ = session.handle(.enter, client: field)
+        field.text = ""; field.cursor = 0
+
+        for ch in "kyouhaiitenkidesune" { _ = session.handle(.letter(ch), client: field) }
+        #expect(session.handle(.delete, client: field))
+        #expect(field.text == "今日はいいてんきです")
+        _ = session.handle(.delete, client: field)
+        #expect(field.text == "今日はいいてんきで")
+        _ = session.handle(.enter, client: field)
+        #expect(field.text == "今日はいいてんきで" && field.marked.location == NSNotFound)
+        #expect(converter.learned.isEmpty)
+        field.text = ""; field.cursor = 0
+
+        // Esc then shows it all as kana, as after any live conversion.
+        for ch in "kyouhaiitenkidesune" { _ = session.handle(.letter(ch), client: field) }
+        _ = session.handle(.delete, client: field)
+        _ = session.handle(.escape, client: field)
+        #expect(field.text == "きょうはいいてんきです")
+    }
+
+    /// A number taken into a live conversion goes back as typed, the phrase less a kana after it.
+    @Test func deleteInLiveConversionPutsTheNumberBack() {
+        let session = InputSession(engine: session.engine, converter: converter, japaneseEnabled: true, liveConversion: true)
+        for ch in "henkan" { _ = session.handle(.letter(ch), client: field) }
+        _ = session.handle(.enter, client: field)
+        if !session.handle(.printable("3"), client: field) { field.insertText("3", replacing: nil) }
+        for ch in "ji" { _ = session.handle(.letter(ch), client: field) }
+        _ = session.handle(.printable(" "), client: field)
+        #expect(field.text.hasPrefix("変換") && field.text.contains("時"))
+        _ = session.handle(.delete, client: field)
+        #expect(field.text == "変換3")
+        #expect(session.conversion == nil && session.keys.isEmpty)
+    }
+
+    /// After a Delete with live conversion the end stays kana while only a letter waiting for its
+    /// vowel follows (へんかn); Space then shows the first candidate, nothing being on screen.
+    @Test func deleteInLiveConversionThenSpaceShowsTheFirstCandidate() {
+        let session = InputSession(engine: session.engine, converter: converter, japaneseEnabled: true, liveConversion: true)
+        for ch in "henkan" { _ = session.handle(.letter(ch), client: field) }
+        _ = session.handle(.printable(" "), client: field)
+        _ = session.handle(.delete, client: field)
+        #expect(field.text == "へんか")
+        _ = session.handle(.letter("n"), client: field)
+        #expect(field.text == "へんかn")
+        _ = session.handle(.printable(" "), client: field)
+        #expect(field.text == "変換")
+    }
+
+    @Test func lastClauseOfAConversion() {
+        #expect(InputSession.dropLastClause("今日はいい天気です", reading: "きょうはいいてんきです") == ("今日はいい", 6))
+        #expect(InputSession.dropLastClause("今日は箱", reading: "きょうははこ") == ("今日は", 4))
+        #expect(InputSession.dropLastClause("googleで検索", reading: "googleでけんさく") == ("googleで", 7))
+        #expect(InputSession.dropLastClause("変換", reading: "へんかん") == ("", 0))
+        #expect(InputSession.dropLastClause("きょうは", reading: "きょうは") == ("", 0))
+        #expect(InputSession.dropLastClause("今日は天気", reading: "ちがう") == ("", 0))
+    }
+
     @Test func returnWithoutConvertingCommitsKanaOnly() {
         type("arigatou")
         #expect(field.text == "ありがとう")

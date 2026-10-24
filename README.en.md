@@ -199,7 +199,7 @@ While a word is being typed it is underlined and shows the language Araso expect
 | letters | extend the word | extend the phrase (kana preview) |
 | **[Language switch keys](#language-switch-keys)** (by default right ⌥ tapped on its own, and ⇧Esc) | switch reading: English → English+particle → Korean → Japanese | same (with live conversion, the kana first) |
 | Esc | commit; the app gets the Esc (when chosen as a switch key, as above) | with live conversion, the kana first; on the kana, cancel the phrase (the app doesn't get it) |
-| Delete | English: the last letter. Korean: the syllable being typed jamo by jamo, earlier ones whole (한국 → 한구 → 한ㄱ → 한 → gone, as the system's 2-set does) | one kana at a time (かんこく → かんこ) |
+| Delete | English: the last letter. Korean: the syllable being typed jamo by jamo, earlier ones whole (한국 → 한구 → 한ㄱ → 한 → gone, as the system's 2-set does) | one kana at a time (かんこく → かんこ); with live conversion the last clause goes back to kana less one, the ones before it staying as shown (今日はいい天気 → 今日はいいてん), as in macOS's Japanese input |
 | **Space** | commit, then a space | **convert to kanji** (candidate window) |
 | `, . ? !` and other symbols | commit, then the key | join the phrase, full-width: 、。？！ （）＿ 「」(`[ ]`) ・(`/`) 〜(`~`) |
 | `-` | commit, then `-` | ー |
@@ -217,7 +217,8 @@ While a word is being typed it is underlined and shows the language Araso expect
 | ←, → | shorten / lengthen the first clause (`今日は｜いいてんき`) |
 | 1–9 | commit that candidate of the page shown |
 | Return | commit the selected candidate |
-| Esc / Delete | back to the kana |
+| Esc | back to the kana |
+| Delete | as in macOS's Japanese input: without live conversion, commit the conversion shown less its last character (変換 → 変); with it, back to typing the phrase, its last clause as kana less one (今日はいい天気 → 今日はいいてん) |
 | letters, punctuation | commit, then keep typing |
 
 Conversion goes clause by clause. The clause the candidates are for is underlined thick and the rest
