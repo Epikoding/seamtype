@@ -11,10 +11,8 @@ import Cocoa
     /// Bumped on every show, so an older fade-out leaves a newer icon alone.
     private static var shown = 0
 
-    /// The system indicator's capsule and its gap below the caret, measured on screen (the icon
-    /// in it is the menu bar icon at its own size).
-    private static let size = NSSize(width: 30, height: 23)
-    private static let gap: CGFloat = 4
+    /// The system indicator's capsule (the icon in it is the menu bar icon at its own size).
+    private static let size = NSSize(width: 30, height: CaretPanel.indicatorHeight)
 
     private static let icons: (on: NSImage, paused: NSImage)? = {
         func load(_ name: String) -> NSImage? {
@@ -26,21 +24,14 @@ import Cocoa
         return (on, paused)
     }()
 
-    /// The system indicator's blue: the accent color's sRGB components taken as Display P3,
-    /// more vivid than the accent color itself (measured against it on screen).
-    private static var fill: CGColor {
-        let accent = NSColor.controlAccentColor.usingColorSpace(.sRGB) ?? .systemBlue
-        return NSColor(displayP3Red: accent.redComponent, green: accent.greenComponent, blue: accent.blueComponent, alpha: 1).cgColor
-    }
-
     /// `caret` is the caret's line in screen coordinates, or `.zero` when the app doesn't say.
     static func show(paused: Bool, caret: NSRect) {
         guard let icons else { return } // not built into an app bundle (development)
         let (panel, imageView) = make()
         imageView.image = paused ? icons.paused : icons.on
         imageView.setAccessibilityLabel(paused ? L("Araso paused") : L("Araso resumed"))
-        panel.contentView?.layer?.backgroundColor = fill
-        panel.setFrame(NSRect(origin: CaretPanel.origin(for: size, caret: caret, gap: gap, centered: true), size: size),
+        panel.contentView?.layer?.backgroundColor = CaretPanel.indicatorFill.cgColor
+        panel.setFrame(NSRect(origin: CaretPanel.origin(for: size, caret: caret, gap: CaretPanel.indicatorGap, centered: true), size: size),
                        display: true)
         panel.alphaValue = 1
         panel.orderFrontRegardless()

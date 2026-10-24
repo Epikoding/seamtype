@@ -82,8 +82,7 @@ final class InputController: IMKInputController {
     override func deactivateServer(_ sender: Any!) {
         MainActor.assumeIsolated {
             session.commit(client: textInput(sender).map(textClient))
-            CandidatesHUD.hide()
-            ReadingsHUD.hide(force: true)
+            StripHUD.hide(force: true)
             Runtime.shared.converter?.save()
         }
         super.deactivateServer(sender)
@@ -92,8 +91,7 @@ final class InputController: IMKInputController {
     override func commitComposition(_ sender: Any!) {
         MainActor.assumeIsolated {
             session.commitForNewContext(client: textInput(sender).map(textClient))
-            CandidatesHUD.hide()
-            ReadingsHUD.hide(force: true)
+            StripHUD.hide(force: true)
         }
     }
 
@@ -149,8 +147,7 @@ final class InputController: IMKInputController {
             let key = key(for: event)
             noteWordRect(input)
             let handled = session.handle(key, client: textClient(input))
-            syncCandidates()
-            syncCaretPanels(input)
+            syncStrip(input)
             // The settings window's typing test shows how each word was decided; only there.
             if session.app == Bundle.main.bundleIdentifier, let trace = session.lastTrace {
                 TypingTrace(trace).post()
@@ -223,23 +220,44 @@ final class InputController: IMKInputController {
         guard !session.inVimNormalMode else { return } // vim's own keys
         noteWordRect(client)
         let handled = session.handle(.cycle, client: textClient(client))
-        syncCandidates()
-        syncCaretPanels(client)
+        syncStrip(client)
         log.debug("handle switchTap handled=\(handled) app=\(self.session.app ?? "?", privacy: .public)")
     }
 
-    /// The readings a switch key just went through, under the word, put away on any other key
-    /// unless it made a correction stick: then the list says so for a moment.
-    @MainActor private func syncCaretPanels(_ client: IMKTextInput) {
-        if let readings = session.readings {
+    /// The strip under the word: the candidates while a clause is converted, else the readings a
+    /// switch key just went through, put away on any other key unless it made a correction stick:
+    /// then the strip says so for a moment. One panel shows them all, so this is the one place
+    /// that decides which.
+    @MainActor private func syncStrip(_ client: IMKTextInput) {
+        if let conversion = session.conversion {
+            StripHUD.show(conversion, clause: caretRect(client)) { [weak self] index in
+                guard let self, let input: IMKTextInput = self.client() else { return }
+                self.session.choose(index, client: self.textClient(input))
+                self.syncStrip(input)
+            }
+        } else if let readings = session.readings {
             let marked = client.markedRange()
             let typing = marked.location != NSNotFound && marked.length > 0
-            ReadingsHUD.show(readings, caret: typing ? caretRect(client) : wordRect ?? caretRect(client))
+            StripHUD.show(readings, word: typing ? caretRect(client) : wordRect ?? caretRect(client)) { [weak self] language in
+                self?.pick(language)
+            }
         } else if let learned = session.learned {
-            ReadingsHUD.settle(learned, word: learnedRect(learned) ?? caretRect(client))
+            StripHUD.settle(learned, word: learnedRect(learned) ?? caretRect(client))
         } else {
-            ReadingsHUD.hide()
+            StripHUD.hide()
         }
+    }
+
+    /// A reading clicked in the strip: switched to as the switch key would, a press at a time,
+    /// once round the readings at most (they can change as the word does).
+    @MainActor private func pick(_ language: Language) {
+        guard let input: IMKTextInput = client() else { return }
+        for _ in 0..<4 {
+            guard let readings = session.readings, readings.languages[readings.selected] != language else { break }
+            noteWordRect(input)
+            _ = session.handle(.cycle, client: textClient(input))
+        }
+        syncStrip(input)
     }
 
     /// Asks where the word being typed is while it is underlined; kept from before a key that
@@ -294,7 +312,7 @@ final class InputController: IMKInputController {
     /// Pauses or resumes this text field, and says so under the caret.
     @MainActor private func togglePause(client: IMKTextInput?) {
         session.togglePause(client: client.map(textClient))
-        ReadingsHUD.hide(force: true)
+        StripHUD.hide(force: true)
         PauseHUD.show(paused: session.paused, caret: client.map(caretRect) ?? .zero)
         log.info("paused=\(self.session.paused) app=\(self.session.app ?? "?", privacy: .public)")
     }
@@ -362,20 +380,6 @@ final class InputController: IMKInputController {
         if ch == " ", event.modifierFlags.contains(.shift) { return .shiftSpace }
         if (0x20..<0x7F).contains(value) { return .printable(ch) }
         return .other
-    }
-
-    // MARK: - Candidate window
-
-    @MainActor private func syncCandidates() {
-        guard let conversion = session.conversion, let input: IMKTextInput = client() else {
-            CandidatesHUD.hide()
-            return
-        }
-        CandidatesHUD.show(conversion, caret: caretRect(input)) { [weak self] index in
-            guard let self, let input: IMKTextInput = self.client() else { return }
-            self.session.choose(index, client: self.textClient(input))
-            self.syncCandidates()
-        }
     }
 
     // MARK: - Input menu

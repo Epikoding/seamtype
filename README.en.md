@@ -224,9 +224,12 @@ Conversion goes clause by clause. The clause the candidates are for is underline
 of the reading thin, so you see where ←/→ put the boundary (apps that ignore underline styles show one
 line). A candidate that covers only the start of the reading (`今日は`
 for きょうはいいてんきですね) commits that part and keeps converting the rest. The candidate window lists
-every homophone the engine has, rare kanji toward the end (`硝` for しょう). It is the same Araso paper card
-as the switch key's list, under the clause with the candidates starting where the clause does: nine to a
-page, numbered, with the reading and the page under them; a click chooses one too.
+every homophone the engine has, rare kanji toward the end (`硝` for しょう). It drops down under the clause
+on the switch key strip's paper, each candidate starting where the clause does, the current one in the
+same blue capsule: nine to a page, numbered, with the reading and the page under them (`きょうは · 1/2`),
+the tenth candidate bringing the next page up. It is as wide as the longest candidate on any page, so
+turning a page moves nothing, and near the bottom of the screen it opens above the clause. A click
+chooses one too.
 
 </details>
 
@@ -258,10 +261,12 @@ Choose the keys that switch readings in the settings window's **Keys** pane, key
 right ⌥ tapped alone, ⌥Space, right ⇧ tapped alone, Esc and ⇧Esc, as many as you like. By default
 they are **right ⌥ tapped alone** and **⇧Esc**. A key not chosen goes to the app.
 
-Pressing one drops the word's readings under it in order, each with its language (EN, KO, JA), the
-one on screen highlighted, so you see how many more presses reach the one you want; any other key
-puts the list away at once. The motion is over within 0.2 s, and there is none with Reduce motion
-on in System Settings.
+Pressing one shows the word's readings in a one-line strip under it (`dkssud · 안녕`). The reading on
+screen sits in a blue capsule like the one macOS shows under the caret when you switch input sources,
+and the others sit beside it as they would go in, so you see what more presses bring; any other key puts
+the strip away at once, and a click on a reading switches to it. Long readings are cut at 140 pt, and
+near the bottom of the screen the strip shows above the word. The motion is over within 0.2 s, and there
+is none with Reduce motion on in System Settings.
 
 - **Right ⌥ or right ⇧ tapped alone**: apps don't react to a lone modifier, so it never closes a
   window or clears input. A tap with other modifiers isn't taken, so a key remapped as a Hyper key
@@ -289,15 +294,13 @@ doesn't, so a stray switch doesn't do much. It is forgotten after 30 days unless
 that way again. Correct the same keys the same way a second time and Araso always writes them so, also with a
 particle after them (remember `ghostty` and you get `ghostty에`);
 switching a word back to Araso's own guess forgets it, and switching a remembered word to yet another
-reading moves the memory there the second time. The switch
-key's list is an Araso paper card, each reading led by its script's letter (`A`, `아`, `あ`), and on the
-letter's shoulder, as tall as it, an icon may lean: a check (✓) on the reading the dictionary remembers
-(corrected twice, or a word you added yourself), a pencil (✎) on one corrected once, a sparkle (✦) on
-the one Araso picks. Left alone, the keys go in as the checked reading, or the sparkle's when there is
-none. The key after a correction folds the list to the
-chosen row, which says what happened for a moment: a pencil and **Once** after the first correction,
-a check and **Remembered** when the word is learned, Araso's sparkle and **Automatic** when switching
-back to Araso's pick forgot it.
+reading moves the memory there the second time. In the switch
+key's strip, a check (✓) after a reading marks the one the dictionary remembers (corrected twice, or a
+word you added yourself), a pencil (✎) one corrected once. The key after a correction folds the strip to
+the chosen reading, whose capsule moves under the word's first letter and says what happened for a
+moment: a pencil and **Noted** after the first correction, the check drawing itself and **Learned**
+when the word is learned, an arrow back (↺) and **Reset** on gray when switching back to Araso's pick
+forgot it. When nothing changed, the strip just closes.
 To tell whether a word went in because of the dictionary, open **Changed by the Dictionary** in the
 input menu: it lists the last five words the dictionary decided, as `ghostty → English`, and choosing
 one forgets it (the list is kept only until the input method restarts, and never saved). If a word

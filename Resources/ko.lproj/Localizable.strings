@@ -261,8 +261,9 @@
 "Changed by the Dictionary" = "사전이 바꾼 단어";
 "%@ → %@ · Forget" = "%@ → %@ · 잊기";
 "%@ → %@, once" = "%@ → %@, 한 번 고침";
-"%@, back to automatic" = "%@, 자동으로 돌아감";
-"Automatic" = "자동으로";
-"Araso's choice" = "Araso가 고른 읽기";
-"Once" = "한 번";
+"%@, back to Araso's own reading" = "%@, 원래대로: Araso가 고르는 읽기";
+"Noted" = "한 번 고침";
+"Learned" = "기억함";
+"Reset" = "원래대로";
+"%@, %ld of %ld" = "%1$@, %3$ld개 중 %2$ld번째";
 "Candidates, %@ selected" = "후보, %@ 선택됨";
