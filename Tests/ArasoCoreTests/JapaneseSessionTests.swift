@@ -169,6 +169,35 @@ import Testing
         #expect(field.text == "翔")
     }
 
+    /// With live conversion a switch key takes a converted phrase back to its kana first, but a
+    /// phrase showing its kana anyway (きょうは, whose first candidate is the kana) switches at once.
+    @Test func switchKeyOnAKanaShownLivePhraseSwitchesAtOnce() {
+        let session = InputSession(engine: session.engine, converter: converter, japaneseEnabled: true, liveConversion: true)
+        for ch in "kyouha" { _ = session.handle(.letter(ch), client: field) }
+        #expect(field.text == "きょうは")
+        #expect(session.handle(.cycle, client: field))
+        #expect(field.text == "kyouha")
+    }
+
+    @Test func switchKeyOnAConvertedLivePhraseShowsTheKanaFirst() {
+        let session = InputSession(engine: session.engine, converter: converter, japaneseEnabled: true, liveConversion: true)
+        for ch in "kyouhaiitenkidesune" { _ = session.handle(.letter(ch), client: field) }
+        #expect(field.text == "今日はいい天気ですね")
+        _ = session.handle(.cycle, client: field)
+        #expect(field.text == "きょうはいいてんきですね")
+        _ = session.handle(.cycle, client: field)
+        #expect(!field.text.contains("きょう"))
+    }
+
+    /// Where Esc isn't a switch key, it cancels a phrase showing its kana anyway at once, as it
+    /// does a converted one once that is back to its kana.
+    @Test func escapeCancelsAKanaShownLivePhrase() {
+        let session = InputSession(engine: session.engine, converter: converter, japaneseEnabled: true, liveConversion: true)
+        for ch in "kyouha" { _ = session.handle(.letter(ch), client: field) }
+        #expect(session.handle(.escape, client: field))
+        #expect(field.text.isEmpty && session.keys.isEmpty)
+    }
+
     @Test func escapeReturnsToKana() {
         type("henkan ")
         session.handle(.escape, client: field)

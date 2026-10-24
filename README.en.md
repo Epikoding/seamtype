@@ -279,8 +279,9 @@ is none with Reduce motion on in System Settings.
 
 The per-app settings can choose other keys for one app: switch with Esc by default, say, and leave
 Esc out where it has to reach the app, as in an editor. The input menu's "Esc Switches Language"
-adds or removes only Esc for the app in front. In the Japanese candidate window and with live
-conversion, Esc goes back to the kana first whatever keys are chosen.
+adds or removes only Esc for the app in front. In the Japanese candidate window, and with live
+conversion while kanji are shown, Esc goes back to the kana first whatever keys are chosen; on a
+phrase live conversion leaves as kana (`たけ`), a switch key switches at once.
 
 ### Undo after commit, and learning
 

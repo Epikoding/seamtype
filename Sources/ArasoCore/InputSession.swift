@@ -452,8 +452,11 @@ public final class InputSession {
             // reaching the app as an Esc (in a terminal, Claude Code's "cancel the draft").
             guard !keys.isEmpty else { return key == .cycle }
             // A live-converted phrase goes back to its kana first, also with an Esc that isn't a
-            // switch key, as in macOS's live conversion (not inside vim: Esc is vim's there).
-            if isLive, (forced ?? previewLanguage) == .japanese, switchesLanguage || vimMode == nil {
+            // switch key, as in macOS's live conversion (not inside vim: Esc is vim's there). Only
+            // with a conversion on screen: a phrase showing its kana anyway (たけ, whose first
+            // candidate is the kana) switches or cancels at once, not after a press that changes nothing.
+            if isLive, (forced ?? previewLanguage) == .japanese, switchesLanguage || vimMode == nil,
+               japaneseDisplay() != japaneseReading(partial: true) {
                 liveSuppressed = true
                 updatePreview(client)
                 return true
