@@ -7,7 +7,10 @@ word whether it is English, Korean (2-set) or Japanese romaji (kanji through mac
 (Korean, the main one) and README.en.md (English) cover the keys, settings files, accuracy numbers
 and data licenses; read one before changing behavior users see, and keep both in step. The website,
 https://nyttastudio.com/araso/ (Korean only), lives in `araso/` of the nyttastudio/nyttastudio.com
-repo (Cloudflare Pages); keep its copy in step too.
+repo (Cloudflare Pages); keep its copy in step too. CONTRIBUTING.md (Korean) and CONTRIBUTING.en.md,
+with the issue and PR templates in `.github`, tell contributors how to build and check a change;
+keep them in step with this file (AGENTS.md only points here). Building needs Swift 6.2 (Xcode 26),
+which `swift-tools-version` in Package.swift says.
 
 ## Commands
 
