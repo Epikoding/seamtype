@@ -49,9 +49,9 @@ Hello, worldhasaishonopuroguramudesu␣.           →  Hello, worldは最初の
 
 - **Decided per word**: English, Korean or Japanese, whichever each word is. No input source to switch.
 - **Mixed words too**: `githubdp` → `github에`, `PDFvkdlf` → `PDF파일`, `githubde` → `githubで`
-- **One key to fix it**: tap right ⌥ to cycle English → English+particle → Korean → Japanese, even right after a word is committed.
-- **Remembers your fixes**: correct the same word the same way twice and it sticks.
-- **Kanji conversion**: clause by clause, with live conversion, through the engine of macOS's own Japanese input.
+- **One key to fix it**: tap right ⌥ to cycle English → English+particle → Korean → Japanese, every reading shown in a strip under the word, even right after a word is committed.
+- **Remembers your fixes**: one correction leans that way, the same correction twice sticks, and switching back to Araso's own reading forgets it; after a correction the strip says what it learned.
+- **Kanji conversion**: clause by clause, with live conversion, through the engine of macOS's own Japanese input, its candidates on Araso's card, nine to a page.
 - **Per app**: Strict in a terminal, off in a game. It follows vim's modes, and a pause key passes keys straight through.
 - **On this Mac only**: keystrokes never leave the input method. A keystroke's preview takes at most ~3 ms.
 - **99.5% accurate**: on about 6,000 held-out words and phrases (Japanese on, [held-out results](#held-out-results)).
