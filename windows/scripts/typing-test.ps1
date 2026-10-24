@@ -280,15 +280,16 @@ Write-Host "machine: $env:PROCESSOR_ARCHITECTURE"
 if ($env:ARASO_SCREENSHOTS -and $env:PROCESSOR_ARCHITECTURE -ne "ARM64") {
     New-Item -ItemType Directory -Force $env:ARASO_SCREENSHOTS | Out-Null
     Add-Type -AssemblyName System.Drawing
-    # The window and what is drawn around it (`below`: room for the candidate window).
-    function Shot([string]$name, [IntPtr]$window, [int]$below = 0) {
+    # The window and what is drawn around it (`below`: room for the strip or the card; `left`: room
+    # for them before the window, as they start under the word's first letter).
+    function Shot([string]$name, [IntPtr]$window, [int]$below = 0, [int]$left = 0) {
         $rect = New-Object Keys+RECT
         [Keys]::GetWindowRect($window, [ref]$rect) | Out-Null
-        $width = $rect.Right - $rect.Left
+        $width = $rect.Right - $rect.Left + $left
         $height = $rect.Bottom - $rect.Top + $below
         $bitmap = New-Object System.Drawing.Bitmap $width, $height
         $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-        $graphics.CopyFromScreen($rect.Left, $rect.Top, 0, 0, $bitmap.Size)
+        $graphics.CopyFromScreen($rect.Left - $left, $rect.Top, 0, 0, $bitmap.Size)
         $bitmap.Save((Join-Path $env:ARASO_SCREENSHOTS "$name.png"), [System.Drawing.Imaging.ImageFormat]::Png)
         $graphics.Dispose(); $bitmap.Dispose()
         Write-Host "screenshot: $name"
@@ -321,10 +322,46 @@ if ($env:ARASO_SCREENSHOTS -and $env:PROCESSOR_ARCHITECTURE -ne "ARM64") {
     Send-Keys "kyouhaiitenki"; Start-Sleep -Milliseconds 700
     Shot "5-japanese-kana" $f.window 40
     Send-Keys " "; Start-Sleep -Milliseconds 900
-    Shot "6-kanji-conversion" $f.window 320
+    Shot "6-kanji-conversion" $f.window 320 40
     Send-Keys " "; Start-Sleep -Milliseconds 700
-    Shot "7-kanji-candidates" $f.window 320
+    Shot "7-kanji-candidates" $f.window 320 40
     Stop-Process -Id $f.process.Id -Force
+
+    # The switch key's strip, and what a correction did: the first one noted (a pencil), the
+    # second learned (a check), the remembered reading marked in the strip after that.
+    $f = Kept "wpf"
+    Send-Keys "hello "; Tap 0x38; Start-Sleep -Milliseconds 300
+    Shot "8-readings-strip" $f.window 80 40
+    Tap 0x38; Start-Sleep -Milliseconds 300
+    Shot "9-readings-strip-next" $f.window 80 40
+    Tap 0x38; Tap 0x38; Start-Sleep -Milliseconds 200 # round to the first switch again
+    Send-Keys "x"; Start-Sleep -Milliseconds 550
+    Shot "10-correction-noted" $f.window 80 40
+    Start-Sleep -Milliseconds 1800
+    Send-Keys " hello "; Tap 0x38; Start-Sleep -Milliseconds 300
+    Shot "11-readings-corrected-once" $f.window 80 40
+    Send-Keys "x"; Start-Sleep -Milliseconds 650
+    Shot "12-correction-learned" $f.window 80 40
+    Start-Sleep -Milliseconds 1800
+    Send-Keys " hello "; Tap 0x38; Start-Sleep -Milliseconds 300
+    Shot "13-readings-remembered" $f.window 80 40
+    Stop-Process -Id $f.process.Id -Force
+
+    # The same in dark mode: the strip and the card on navy paper.
+    $personalize = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+    $light = (Get-ItemProperty $personalize -ErrorAction SilentlyContinue).AppsUseLightTheme
+    New-Item -Force $personalize -ErrorAction SilentlyContinue | Out-Null
+    Set-ItemProperty $personalize AppsUseLightTheme 0
+    $f = Kept "wpf"
+    Send-Keys "kyouhaiitenki "; Start-Sleep -Milliseconds 900
+    Shot "14-dark-kanji-candidates" $f.window 320 40
+    Stop-Process -Id $f.process.Id -Force
+    $f = Kept "wpf"
+    Send-Keys "dkssud "; Tap 0x38; Start-Sleep -Milliseconds 300
+    Shot "15-dark-readings-strip" $f.window 80 40
+    Stop-Process -Id $f.process.Id -Force
+    if ($null -eq $light) { Remove-ItemProperty $personalize AppsUseLightTheme -ErrorAction SilentlyContinue }
+    else { Set-ItemProperty $personalize AppsUseLightTheme $light }
 
     # The settings window, every tab; Try Typing with a few words in it.
     foreach ($tab in "general", "keys", "apps", "learning", "about") {
