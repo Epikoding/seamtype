@@ -410,6 +410,7 @@ void StripWindow::Build(std::vector<Cell> cells, Mode mode, float cardWidth, int
     strip.y = std::max(work.top, std::min(strip.y, work.bottom - pixels.cy));
     if (turn != 0 && wasUp) strip = oldStrip;
     above_ = strip.y < word.top;
+    word_ = word;
     origin_ = {strip.x - static_cast<LONG>(std::lround(kMargin * scale)),
                strip.y - static_cast<LONG>(std::lround(kMargin * scale))};
 
@@ -472,8 +473,11 @@ void StripWindow::Settle(const std::wstring &text, const std::string &learning, 
     if (!Factories()) return;
     bool hasWord = word.bottom > word.top;
     int index;
+    RECT under = word;
     if (Up() && !settling_ && mode_ == Mode::row && selected_ < static_cast<int>(cells_.size())) {
         index = selected_;
+        under = word_;
+        hasWord = true;
     } else {
         if (!hasWord) return;
         texts_.clear();
@@ -506,9 +510,9 @@ void StripWindow::Settle(const std::wstring &text, const std::string &learning, 
     float from = stripLeft + start.left * scale;
     float to = from;
     if (hasWord) {
-        RECT work = ui::WorkAreaAt(word);
+        RECT work = ui::WorkAreaAt(under);
         to = std::max(static_cast<float>(work.left),
-                      std::min(word.left - kPad * scale, static_cast<float>(work.right) - width * scale));
+                      std::min(under.left - kPad * scale, static_cast<float>(work.right) - width * scale));
     }
     float trackWidth = strip_.right - strip_.left;
     float stripWidth = std::max(trackWidth, start.left + width);

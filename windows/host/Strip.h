@@ -105,6 +105,9 @@ private:
     int page_ = 0;
     int pageStart_ = 0;
     bool above_ = false;
+    /// The word the strip was put under: a correction folds back under it, whatever the key
+    /// that made the correction started since.
+    RECT word_ = {};
     std::wstring footer_;
     Com<IDWriteTextLayout> footerLayout_;
     std::function<void(int)> pick_, choose_;
