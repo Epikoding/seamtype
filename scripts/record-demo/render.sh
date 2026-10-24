@@ -22,28 +22,33 @@ lead=0.2
 # The typing plays this much faster than it was recorded.
 speed=1.35
 # Where each clip starts in the recording, in seconds of the video.
-menu_from=1.6 page_from=6.6
+menu_from=1.67 page_from=6.6
 
 mkdir -p "$assets"
-read -r px py pw ph mx my <<<"$(python3 - "$footage/keys.json" <<'EOF'
+width=$(ffprobe -v error -select_streams v:0 -show_entries stream=width -of csv=p=0 "$footage/demo.mov")
+read -r s px py pw ph mx my <<<"$(python3 - "$footage/keys.json" $width <<'EOF'
 import json, sys
 d = json.load(open(sys.argv[1]))
 p, m = d["page"], d["inputMenu"]
-# Points to pixels (the recording is at 2x). The page loses its bottom 12 pt: the window's
-# rounded corners.
-print(p["x"] * 2, p["y"] * 2, p["w"] * 2, (p["h"] - 12) * 2, (m["x"] + m["w"] / 2) * 2, (m["y"] + m["h"] / 2) * 2)
+# Points to pixels: the recording's width over the screen's, 2 on a Retina screen (1 where a
+# remote desktop session has set the screen to fit its window). The page loses its bottom 12 pt:
+# the window's rounded corners.
+s = round(int(sys.argv[2]) / d["screen"]["w"])
+print(s, *(round(v * s) for v in (p["x"], p["y"], p["w"], p["h"] - 12, m["x"] + m["w"] / 2, m["y"] + m["h"] / 2)))
 EOF
 )"
 encode=(-c:v libx264 -preset slow -crf 16 -pix_fmt yuv420p -an -movflags +faststart)
+# The film is laid out for 2x clips, so a 1x recording is enlarged (and comes out softer).
+up="scale=iw*2/${s}:ih*2/${s}:flags=lanczos"
 # The page, sped up.
 ffmpeg -v error -y -ss $page_from -i "$footage/demo.mov" \
-  -vf "crop=$pw:$ph:$px:$py,setpts=PTS/$speed,fps=30" $encode "$assets/page.mp4"
-# The input menu with its open menu below it (680 × 600 px around the icon), at real speed.
+  -vf "crop=$pw:$ph:$px:$py,$up,setpts=PTS/$speed,fps=30" $encode "$assets/page.mp4"
+# The input menu with its open menu below it (340 × 300 pt around the icon), at real speed.
 ffmpeg -v error -y -ss $menu_from -t 6.4 -i "$footage/demo.mov" \
-  -vf "crop=680:600:$((mx - 168)):0,fps=30" $encode "$assets/menu.mp4"
-# Just the icon (120 × 64 px), on the page's clock.
+  -vf "crop=$((340 * s)):$((300 * s)):$((mx - 84 * s)):0,$up,fps=30" $encode "$assets/menu.mp4"
+# Just the icon (60 × 32 pt), on the page's clock.
 ffmpeg -v error -y -ss $page_from -i "$footage/demo.mov" \
-  -vf "crop=120:64:$((mx - 60)):$((my - 32)),setpts=PTS/$speed,fps=30" $encode "$assets/icon.mp4"
+  -vf "crop=$((60 * s)):$((32 * s)):$((mx - 30 * s)):$((my - 16 * s)),$up,setpts=PTS/$speed,fps=30" $encode "$assets/icon.mp4"
 
 # Key times on the page clip's clock.
 python3 - "$footage/keys.json" "$assets/keys.js" $lead $speed $page_from <<'EOF'
