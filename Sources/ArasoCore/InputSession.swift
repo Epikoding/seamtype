@@ -98,9 +98,10 @@ public final class InputSession {
         }
     }
 
-    /// A kana→kanji conversion in progress.
+    /// A kana→kanji conversion in progress, or the phrases of a Korean or English text
+    /// replacement shortcut offered the same way (`language`).
     public struct Conversion: Equatable {
-        /// The reading still being converted.
+        /// The reading still being converted (the shortcut, for phrases).
         public let kana: String
         /// The romaji that produced `kana`, so Esc can go back to editing it.
         public let keys: String
@@ -111,6 +112,9 @@ public final class InputSession {
         /// Digits the app had already typed just before the phrase, taken into the reading
         /// (3ji → 3じ → 3時); not part of `keys`.
         var numberPrefix = ""
+        /// Japanese for kana→kanji; Korean or English for a shortcut's phrases (ㅈㅅ entered more
+        /// than once), which go in with the space that offered them and teach the converter nothing.
+        var language = Language.japanese
 
         public var current: ConversionCandidate { candidates[selected] }
         /// How many candidates the window shows at a time, numbered 1 to 9 for the digit keys.
@@ -558,6 +562,7 @@ public final class InputSession {
                     return true
                 }
             }
+            if ch == " ", !endsInURL, offerPhrases(client) { return true }
             let marked = client.markedRange()
             let location = marked.location != NSNotFound ? marked.location : client.selectedRange().location
             let previous = previousLanguage
@@ -623,6 +628,7 @@ public final class InputSession {
     /// Commits whatever is in progress as-is (focus change, shortcut, deactivation).
     public func commit(client: TextClient?) {
         closeFlipWindow()
+        if let conversion, conversion.language != .japanese { return commitPhrase(client: client) }
         if let conversion {
             client?.insertText(conversion.display, replacing: nil)
             noteRun(conversion.display)
@@ -1019,6 +1025,45 @@ public final class InputSession {
         showConversion(client, replacing: prefixRange) // with a prefix: the number, then the phrase
     }
 
+    /// Space on a Korean or English text replacement shortcut entered more than once (ㅈㅅ for two
+    /// phrases): the phrases are offered as a Japanese shortcut's are, oldest first, then the
+    /// shortcut as typed. The app would replace it with one phrase only (AppKit keeps one per
+    /// shortcut); with a single phrase it still does. False when the word isn't such a shortcut.
+    private func offerPhrases(_ client: TextClient) -> Bool {
+        let language = currentLanguage()
+        guard language == .korean || language == .english else { return false }
+        dropNMarker()
+        let shortcut = language == .korean ? hangul() ?? engine.render(keys, as: language) : engine.render(keys, as: language)
+        guard let phrases = replacements[shortcut]?.filter({ $0 != shortcut }), phrases.count > 1 else { return false }
+        let userForced = forced == language && forcedByUser
+        wordEnds(as: language, engineChoice: committedLanguage())
+        let candidates = (phrases + [shortcut]).map { ConversionCandidate(text: $0, kanaCount: shortcut.count) }
+        conversion = Conversion(kana: shortcut, keys: keys, candidates: candidates, selected: 0, userForced: userForced,
+                                language: language)
+        passedRun = nil
+        keys = ""
+        forced = nil
+        forcedByUser = false
+        pinned = nil
+        syllableStart = nil
+        addedNMarker = false
+        previewLanguage = nil
+        enginePreview = nil
+        showConversion(client)
+        return true
+    }
+
+    /// The chosen phrase of a Korean or English shortcut, with the space that offered it.
+    private func commitPhrase(client: TextClient?) {
+        guard let conversion else { return }
+        let text = conversion.current.text + " "
+        client?.insertText(text, replacing: nil)
+        noteRun(text)
+        noteBrackets(in: conversion.current.text)
+        previousLanguage = conversion.language.sentenceLanguage
+        self.conversion = nil
+    }
+
     /// Shows the reading as katakana (or hiragana) as the selected "candidate": Return
     /// commits it, Space flips to the other form, typing on commits it and continues.
     private func showKanaForms(_ katakanaFirst: Bool, kana: String? = nil, keys romaji: String? = nil, client: TextClient) {
@@ -1077,7 +1122,7 @@ public final class InputSession {
             return true
 
         case .left, .right:
-            if let resized = resizeFirstClause(conversion, by: key == .left ? -1 : 1) {
+            if conversion.language == .japanese, let resized = resizeFirstClause(conversion, by: key == .left ? -1 : 1) {
                 self.conversion = resized
                 showConversion(client)
             }
@@ -1098,12 +1143,24 @@ public final class InputSession {
             return true
 
         case .katakana, .hiragana:
+            guard conversion.language == .japanese else {
+                commit(client: client) // a shortcut's phrase: ⌃K/⌃J stay the app's shortcuts
+                return false
+            }
             self.conversion = nil
             showKanaForms(key == .katakana, kana: conversion.kana, keys: conversion.keys, client: client)
             return true
 
         case .escape, .cycle, .delete:
             self.conversion = nil
+            guard conversion.language == .japanese else {
+                // Back to the shortcut as typed; Space offers its phrases again.
+                keys = conversion.keys
+                forced = conversion.userForced ? conversion.language : nil
+                forcedByUser = conversion.userForced
+                updatePreview(client)
+                return true
+            }
             liveSuppressed = true // "back to kana" means kana, also with live conversion
             // A number taken in from before the phrase goes back as it was typed.
             if !conversion.numberPrefix.isEmpty {
@@ -1142,6 +1199,7 @@ public final class InputSession {
     /// Commits the selected candidate; if it covers only the start of the reading,
     /// keeps converting the rest.
     private func commitCandidate(client: TextClient) {
+        if let conversion, conversion.language != .japanese { return commitPhrase(client: client) }
         guard let conversion, let converter else { return }
         let candidate = conversion.current
         converter.learn(candidate, for: conversion.kana)

@@ -339,8 +339,12 @@ it does with the system's input. English shortcuts are decided as usual.
 
 - A Japanese shortcut's phrase is the first candidate on Space, and a shortcut entered more than
   once offers every phrase in turn. Enter a Japanese shortcut as its hiragana reading (`よろ`, `ぐー`).
+- A Korean or English shortcut entered more than once (two phrases or more) offers them in the
+  same candidate window on Space, then the shortcut as typed: the one chosen goes in with the
+  space, and Esc goes back to the shortcut. With one phrase the app replaces it as before (macOS
+  hands apps one phrase per shortcut).
 - The app does the replacing, so apps without text replacement (terminals, Chrome…) only get the
-  Japanese candidate.
+  phrases chosen in the candidate window.
 - Edits to the list apply the next time a text field becomes active.
 
 ### Pause

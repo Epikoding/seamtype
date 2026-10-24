@@ -722,6 +722,60 @@ import Testing
         type("kyouha go")
         #expect(session.lastTrace?.decision.explanation != "text replacement shortcut")
     }
+
+    /// A Korean shortcut entered more than once offers its phrases on Space as a Japanese one
+    /// does, then the shortcut as typed; the chosen one goes in with the space.
+    @Test func koreanShortcutWithSeveralPhrasesOffersThem() {
+        session.replacements["ㅈㅅ"] = ["죄송합니다", "잠시만요"]
+        type("wt ")
+        #expect(session.conversion?.candidates.map(\.text) == ["죄송합니다", "잠시만요", "ㅈㅅ"])
+        #expect(field.text == "죄송합니다")
+        type(" ")
+        #expect(field.text == "잠시만요")
+        _ = session.handle(.enter, client: field)
+        #expect(field.text == "잠시만요 " && session.conversion == nil)
+    }
+
+    /// So does an English one the engine reads as English; typing on takes the phrase and its space.
+    @Test func englishShortcutWithSeveralPhrasesOffersThem() {
+        session.replacements["go"] = ["gone", "going"]
+        type("go ")
+        #expect(session.conversion?.candidates.map(\.text) == ["gone", "going", "go"])
+        type("x")
+        #expect(field.text == "gone x")
+    }
+
+    /// A digit picks a phrase on the page; Esc goes back to the shortcut, and Space offers them again.
+    @Test func phrasesByDigitAndBackWithEscape() {
+        session.replacements["ㅈㅅ"] = ["죄송합니다", "잠시만요"]
+        type("wt ")
+        _ = session.handle(.escape, client: field)
+        #expect(session.conversion == nil && field.text == "ㅈㅅ" && session.keys == "wt")
+        type(" 2")
+        #expect(field.text == "잠시만요 ")
+    }
+
+    /// Without Japanese input a Korean shortcut's phrases are offered all the same.
+    @Test func phrasesWithoutJapanese() {
+        let session = InputSession(engine: session.engine)
+        let field = FakeTextField()
+        session.replacements = ["ㅈㅅ": ["죄송합니다", "잠시만요"]]
+        for ch in "wt" { _ = session.handle(.letter(ch), client: field) }
+        #expect(session.handle(.printable(" "), client: field))
+        #expect(session.conversion?.candidates.count == 3)
+        session.choose(1, client: field)
+        #expect(field.text == "잠시만요 ")
+    }
+
+    /// A shortcut whose phrases are offered was typed as a word: one its dictionary entry
+    /// decided is listed, as when it goes in.
+    @Test func offeredShortcutIsListed() {
+        session.replacements["ㅈㅅ"] = ["죄송합니다", "잠시만요"]
+        session.engine.add(.init(keys: "wt", language: .korean, source: .user))
+        type("wt ")
+        #expect(session.conversion?.candidates.count == 3)
+        #expect(session.engine.recentlyApplied == [.init(keys: "wt", text: "ㅈㅅ", language: .korean)])
+    }
 }
 
 /// A converter whose first candidate for ゆーちゅ is a completion.
