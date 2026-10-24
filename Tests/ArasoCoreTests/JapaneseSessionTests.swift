@@ -329,6 +329,24 @@ import Testing
         #expect(field.text == "変換")
     }
 
+    /// With live conversion Space shows the candidate after the one on screen (変換 → 返還), but a
+    /// letter waiting for its vowel meant none of the whole reading's was (へんかn): Space then
+    /// shows the first, as macOS does.
+    @Test func spaceAfterAPendingLetterShowsTheFirstCandidate() {
+        let session = InputSession(engine: session.engine, converter: converter, japaneseEnabled: true, liveConversion: true)
+        for ch in "henkan" { _ = session.handle(.letter(ch), client: field) }
+        #expect(field.text == "へんかn")
+        _ = session.handle(.printable(" "), client: field)
+        #expect(field.text == "変換")
+        _ = session.handle(.escape, client: field)
+        _ = session.handle(.escape, client: field)
+        field.text = ""; field.cursor = 0
+        for ch in "henkann" { _ = session.handle(.letter(ch), client: field) }
+        #expect(field.text == "変換")
+        _ = session.handle(.printable(" "), client: field)
+        #expect(field.text == "返還")
+    }
+
     @Test func lastClauseOfAConversion() {
         #expect(InputSession.dropLastClause("今日はいい天気です", reading: "きょうはいいてんきです") == ("今日はいい", 6))
         #expect(InputSession.dropLastClause("今日は箱", reading: "きょうははこ") == ("今日は", 4))

@@ -1059,6 +1059,9 @@ public final class InputSession {
         // After a Delete live conversion shows the end as kana (へんかn), not a candidate: Space
         // shows the first one (変換), as macOS does.
         let kept = isLive ? liveReading().flatMap { keptOnScreen($0.kana) } : nil
+        // Nor is one on screen with a letter waiting for its vowel: 変化n was へんか's, so Space on
+        // henkan shows へんかん's first, 変換, as macOS does, not the one after it.
+        let pendingShown = isLive && !(liveReading()?.pending.isEmpty ?? true)
         let userForced = forced == .japanese && forcedByUser
         wordEnds(as: .japanese, engineChoice: committedLanguage())
         // A number the app typed just before the phrase is part of it: 3ji is 3時, not 3 and 時
@@ -1079,7 +1082,7 @@ public final class InputSession {
             candidates = candidates.filter { $0.text.hasPrefix(numberPrefix) } + candidates.filter { !$0.text.hasPrefix(numberPrefix) }
         }
         // Live conversion showed the phrase without the number, so no candidate is on screen yet.
-        let live = isLive && numberPrefix.isEmpty && kept == nil ? liveCandidate(for: kana) : nil
+        let live = isLive && numberPrefix.isEmpty && kept == nil && !pendingShown ? liveCandidate(for: kana) : nil
         if let phrases = replacements[kana], !phrases.isEmpty {
             // Text replacements come first, or right after the live candidate already on screen.
             let at = live.flatMap { candidates.firstIndex(of: $0) }.map { $0 + 1 } ?? 0
