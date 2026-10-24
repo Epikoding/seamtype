@@ -592,6 +592,7 @@ public final class InputSession {
                 commit(client: client)
                 return false
             }
+            wordEnds(as: .japanese, engineChoice: committedLanguage())
             showKanaForms(key == .katakana, client: client)
             return true
 
@@ -962,9 +963,7 @@ public final class InputSession {
         var kana = japaneseReading(partial: false)
         guard converter != nil, !kana.isEmpty else { return }
         let userForced = forced == .japanese && forcedByUser
-        if userForced, !inURLRun {
-            record(keys, as: .japanese, engineChoice: committedLanguage())
-        }
+        wordEnds(as: .japanese, engineChoice: committedLanguage())
         // A number the app typed just before the phrase is part of it: 3ji is 3時, not 3 and 時
         // picked out of 地, 字, 自…
         let marked = client.markedRange()
@@ -1499,6 +1498,20 @@ public final class InputSession {
         engine.noteApplied(keys: keys, text: String(decision.output.prefix(count)), language: language)
     }
 
+    /// The word being typed ends as `language`: it goes in, or its conversion, kana forms or a
+    /// shortcut's phrases start. A correction the user made to it is learned; otherwise it was
+    /// typed again (a weak entry saying so stays) and, when its dictionary entry decided it, it
+    /// is listed. Inside a URL or path it isn't a word: neither.
+    private func wordEnds(as language: Language, engineChoice: Language) {
+        guard !inURLRun else { return }
+        if forced != nil, forcedByUser {
+            record(keys, as: language, engineChoice: engineChoice)
+        } else {
+            engine.used(keys, as: language)
+            noteRemembered(as: language)
+        }
+    }
+
     /// Decides the current word, learns an Esc override, and resets the buffer.
     private func finishWord() -> (keys: String, text: String, language: Language, decided: Language) {
         let engineChoice = committedLanguage()
@@ -1507,12 +1520,7 @@ public final class InputSession {
         // "Back to kana" without the user's Esc, or a reading kept while deleting, isn't a
         // correction: report it as the engine's.
         let decided = (forced != nil && !forcedByUser) || (forced == nil && pinned != nil) ? language : engineChoice
-        if inURLRun {
-            // Not a word: neither a correction to learn nor a use of one.
-        } else if forced != nil, forcedByUser { record(keys, as: language, engineChoice: decided) } else {
-            engine.used(keys, as: language)
-            noteRemembered(as: language)
-        }
+        wordEnds(as: language, engineChoice: decided)
         let text = language == .japanese ? committedJapanese()
                  : language == .korean ? hangul() ?? engine.render(keys, as: language) : engine.render(keys, as: language)
         liveSuppressed = false

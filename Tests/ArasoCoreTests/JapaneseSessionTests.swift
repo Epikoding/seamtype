@@ -583,6 +583,52 @@ import Testing
         }
         #expect(field.text == typed)
     }
+
+    /// A word that goes in through its conversion or its kana forms was typed again, as one
+    /// that goes in with Return: a weak correction to it stays, a switch away from a remembered
+    /// one noted since was a slip, and a word the dictionary decided is listed.
+    @Test(arguments: [false, true])
+    func convertedWordIsTypedAgain(katakana: Bool) {
+        let lex = FileManager.default.temporaryDirectory.appendingPathComponent("araso-lj-\(UUID().uuidString).json")
+        let base = SplittingEngine(base: trilingual, english: trilingual.english, japanese: trilingual.segmenter)
+        let corrected = Date(timeIntervalSince1970: 1_790_000_000)
+        let typed = corrected.addingTimeInterval(20 * 86_400)
+        let before = DictionaryEngine(base: base, storeURL: lex, today: { corrected })
+        before.learn("kyouha", as: .japanese, engineChoice: .english) // once: weak
+        before.learn("sugoi", as: .japanese, engineChoice: .english)
+        before.learn("sugoi", as: .japanese, engineChoice: .english)  // twice: remembered
+        before.learn("sugoi", as: .korean, engineChoice: .japanese)   // a switch away, noted
+        #expect(before.dictionary.languageEntry(for: "sugoi")?.next == .korean)
+        let engine = DictionaryEngine(base: base, storeURL: lex, today: { typed })
+        let session = InputSession(engine: engine, converter: FakeConverter(), japaneseEnabled: true)
+        let field = FakeTextField()
+        for word in ["kyouha", "sugoi"] {
+            for ch in word { _ = session.handle(.letter(ch), client: field) }
+            _ = session.handle(katakana ? .katakana : .printable(" "), client: field)
+            #expect(session.conversion != nil)
+            _ = session.handle(.enter, client: field)
+        }
+        #expect(field.text == (katakana ? "キョウハスゴイ" : "きょうはすごい"))
+        #expect(engine.dictionary.languageEntry(for: "kyouha")?.last == UserDictionary.day(typed))
+        #expect(engine.dictionary.languageEntry(for: "sugoi")?.next == nil)
+        #expect(engine.recentlyApplied.map(\.keys) == ["sugoi"])
+    }
+
+    /// A word switched to Japanese and put in its kana forms learns the switch, as with Space.
+    @Test func kanaFormsLearnTheSwitch() {
+        let lex = FileManager.default.temporaryDirectory.appendingPathComponent("araso-lj-\(UUID().uuidString).json")
+        let engine = DictionaryEngine(base: SplittingEngine(base: trilingual, english: trilingual.english, japanese: trilingual.segmenter), storeURL: lex)
+        let session = InputSession(engine: engine, converter: FakeConverter(), japaneseEnabled: true)
+        let field = FakeTextField()
+        for ch in "sushi" { _ = session.handle(.letter(ch), client: field) }
+        #expect(field.text == "sushi")
+        for _ in 0..<4 where field.text != "すし" { _ = session.handle(.cycle, client: field) }
+        #expect(field.text == "すし")
+        _ = session.handle(.katakana, client: field)
+        _ = session.handle(.enter, client: field)
+        #expect(field.text == "スシ")
+        #expect(engine.correctedOnce("sushi", app: nil) == .japanese)
+    }
 }
 
 /// A Strict app with Japanese on: a consonant at the end, still waiting for its vowel while

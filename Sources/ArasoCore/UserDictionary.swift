@@ -398,8 +398,9 @@ public final class DictionaryEngine: DecisionEngine, @unchecked Sendable {
     private var recent: [Applied] = []
     static let recentCount = 5
 
-    /// The session committed a word its dictionary entry decided. Entries for some apps only
-    /// aren't listed: forgetting from the menu forgets the entry for every app.
+    /// The session ended a word its dictionary entry decided: it went in, or its conversion
+    /// started. Entries for some apps only aren't listed: forgetting from the menu forgets the
+    /// entry for every app.
     public func noteApplied(keys: String, text: String, language: Language) {
         lock.withLock {
             guard store.entries.contains(where: { $0.keys == keys && $0.language != nil && $0.forEveryApp }) else { return }
