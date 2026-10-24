@@ -107,13 +107,14 @@ pkg, not both.
 </details>
 
 <details>
-<summary>Windows (preview)</summary>
+<summary>Windows (beta)</summary>
 
 The same input method on Windows 10 (1809) or later. Deciding words, the dictionary and learning are
 the same code as on macOS; kanji conversion is AzooKey's.
 
-1. Download `Araso-Setup.exe` from the release and install it. It registers Araso and adds it to
-   Korean's input methods.
+1. Download `Araso-Setup.exe` from the [Windows beta](https://github.com/nyttastudio/araso/releases/tag/windows-beta-1)
+   and install it. It registers Araso and adds it to Korean's input methods, on x64 and ARM64 PCs
+   alike. It isn't code-signed yet: when "Windows protected your PC" shows, choose **More info → Run anyway**.
 2. Pick **Araso** in the taskbar's input indicator. Its menu is the macOS input menu.
 
 Where it differs from macOS:
@@ -126,8 +127,11 @@ Where it differs from macOS:
 - In older apps (Windows 10's Notepad, for one), the word being typed is shown underlined in a
   small window at the caret and goes in whole when it ends: such apps don't let a Korean input
   method compose a whole word.
+- The beta doesn't update itself. Install a newer beta from the [releases](https://github.com/nyttastudio/araso/releases)
+  over it.
 
-The rest is mapped in [docs/windows-port.md](docs/windows-port.md).
+The rest is mapped in [docs/windows-port.md](docs/windows-port.md). Report what doesn't work in
+[Issues](https://github.com/nyttastudio/araso/issues), with the app's program name (`notepad.exe`).
 
 </details>
 

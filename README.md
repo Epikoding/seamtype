@@ -103,12 +103,14 @@ curl -fsSL https://raw.githubusercontent.com/nyttastudio/araso/main/scripts/get.
 </details>
 
 <details>
-<summary>Windows (미리보기)</summary>
+<summary>Windows (베타)</summary>
 
 Windows 10(1809) 이상에서 도는 같은 입력기입니다. 단어 판단, 사전, 학습은 macOS와 같은 코드이고, 한자 변환은
 AzooKey로 합니다.
 
-1. 릴리스의 `Araso-Setup.exe`를 받아 설치하세요. Araso를 등록하고 한국어 입력 방법에 추가합니다.
+1. [Windows 베타](https://github.com/nyttastudio/araso/releases/tag/windows-beta-1)의 `Araso-Setup.exe`를 받아 설치하세요.
+   Araso를 등록하고 한국어 입력 방법에 추가합니다. x64와 ARM64 PC 모두 됩니다. 아직 코드 서명이 없어서
+   "Windows의 PC 보호" 창이 뜨면 **추가 정보 → 실행**을 누르세요.
 2. 작업 표시줄의 입력 표시기에서 **Araso**를 고르세요. 그 메뉴가 macOS의 입력 메뉴와 같습니다.
 
 macOS와 다른 점은 이렇습니다.
@@ -117,8 +119,10 @@ macOS와 다른 점은 이렇습니다.
 - 앱은 `notepad.exe`처럼 프로그램 이름으로 정하고, 설정 파일은 `%APPDATA%\Araso`에 있습니다.
 - 텍스트 대치는 그 폴더의 `replacements.json`(`{"주소": ["서울시 …"]}`)에서 읽어 Araso가 직접 바꿉니다.
 - 메모장(Windows 10)처럼 오래된 방식의 앱에서는 치는 단어가 커서 자리의 작은 창에 밑줄로 보이고, 단어가 끝나면 한꺼번에 들어갑니다. 그런 앱은 한국어 입력기가 단어 전체를 조합하게 두지 않기 때문입니다.
+- 베타는 자동 업데이트가 되지 않습니다. 새 베타는 [릴리스 목록](https://github.com/nyttastudio/araso/releases)에서 받아 덮어 설치하세요.
 
-나머지 대응은 [docs/windows-port.md](docs/windows-port.md)에 있습니다.
+나머지 대응은 [docs/windows-port.md](docs/windows-port.md)에 있습니다. 안 되는 점은 쓰던 앱 이름(`notepad.exe` 등)과 함께
+[Issues](https://github.com/nyttastudio/araso/issues)에 남겨 주세요.
 
 </details>
 
