@@ -61,11 +61,11 @@ bool Factories() {
         return false;
     }
     if (!g_cellFormat) {
-        // Windows 11's Segoe UI has a medium weight, as the Mac's strip uses; Hangul and kana fall
-        // back to Malgun Gothic and Yu Gothic either way.
+        // Regular, not the Mac's medium: Malgun Gothic and Yu Gothic, which Hangul and kana fall back
+        // to, have no medium, and medium came out as their bold.
         const wchar_t *family = HasFamily(L"Segoe UI Variable Text") ? L"Segoe UI Variable Text" : L"Segoe UI";
-        g_cellFormat = MakeFormat(family, 13, DWRITE_FONT_WEIGHT_MEDIUM);
-        g_numberFormat = MakeFormat(family, 10, DWRITE_FONT_WEIGHT_MEDIUM);
+        g_cellFormat = MakeFormat(family, 13, DWRITE_FONT_WEIGHT_REGULAR);
+        g_numberFormat = MakeFormat(family, 10, DWRITE_FONT_WEIGHT_REGULAR);
         g_footerFormat = MakeFormat(family, 11, DWRITE_FONT_WEIGHT_REGULAR);
         g_outcomeFormat = MakeFormat(family, 12, DWRITE_FONT_WEIGHT_SEMI_BOLD);
         // The pencil and the arrow back: Windows' own icon font (Segoe MDL2 Assets on Windows 10).
