@@ -1,6 +1,6 @@
 <!--
 기여 안내 / Contributing: CONTRIBUTING.md · CONTRIBUTING.en.md
-모든 PR은 메인테이너가 방향에 답한 이슈에서 시작합니다. / Every PR starts from an issue the maintainer has answered on.
+모든 PR은 `accepted` 라벨이 붙은 이슈에서 시작합니다. / Every PR starts from an issue labeled `accepted`.
 -->
 
 Closes #<!-- 이슈 번호 (필수) / issue number (required) -->

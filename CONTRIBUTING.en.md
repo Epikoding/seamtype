@@ -11,9 +11,10 @@ reviews everything, so answers can take a while.
 
 1. Open an [issue](https://github.com/nyttastudio/araso/issues/new/choose) first: the bug form for
    a bug, the suggestion form for a feature or an improvement.
-2. Start working once the maintainer has answered on the direction in the issue: bugs, features
-   and doc fixes alike. Changing course after a large PR is costly for both sides.
-3. Link the issue in the PR description with `Closes #<number>`.
+2. Start working once the maintainer has answered on the direction and labeled the issue
+   `accepted`: bugs, features and doc fixes alike. Changing course after a large PR is costly for both sides.
+3. Link the issue in the PR description with `Closes #<number>`. A bot comments on a PR that isn't
+   linked to an `accepted` issue, and edits that comment once it is.
 
 Questions, install problems and security issues don't go in issues:
 

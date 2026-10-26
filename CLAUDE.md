@@ -9,7 +9,9 @@ and data licenses; read one before changing behavior users see, and keep both in
 https://nyttastudio.com/araso/ (Korean only), lives in `araso/` of the nyttastudio/nyttastudio.com
 repo (Cloudflare Pages); keep its copy in step too. CONTRIBUTING.md (Korean) and CONTRIBUTING.en.md,
 with the issue and PR templates in `.github`, tell contributors how to build and check a change;
-keep them in step with this file (AGENTS.md only points here). Building needs Swift 6.2 (Xcode 26),
+keep them in step with this file (AGENTS.md only points here). A contributor's PR starts from an
+issue the maintainer labeled `accepted`; `.github/workflows/issue-first.yml` comments on one that
+doesn't link such an issue (`.github/scripts/issue-first.sh`, `DRY_RUN=1` to try it). Building needs Swift 6.2 (Xcode 26),
 which `swift-tools-version` in Package.swift says.
 
 ## Commands
