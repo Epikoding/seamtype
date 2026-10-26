@@ -36,7 +36,7 @@ Araso, so they aren't mistaken for the official versions.
   `windows/scripts/check-cross.sh` (zig).
 
 The words the code uses (Lingering Shift, Word, Reading…) are in [GLOSSARY.md](GLOSSARY.md). The
-fullest account of the structure and its pitfalls is [CLAUDE.md](CLAUDE.md), written for AI agents
+fullest account of the structure and its pitfalls is [AGENTS.md](AGENTS.md), written for AI agents
 but readable by people.
 
 ## Build and test
@@ -112,8 +112,8 @@ Put the numbers from before and after (accuracy, wrong splits) in the PR descrip
 - On your first PR, CI runs once the maintainer approves it.
 - CI (`test`) has to pass to merge. If you touched `InputSession` or `ArasoService`, check the
   Windows CI too.
-- AI tools are fine. Have them read [CLAUDE.md](CLAUDE.md) (or [AGENTS.md](AGENTS.md), which points
-  to it). In the PR, write what you ran and checked yourself.
+- AI tools are fine. Have them read [AGENTS.md](AGENTS.md) (Claude Code reads it through
+  CLAUDE.md). In the PR, write what you ran and checked yourself.
 
 ## License
 
