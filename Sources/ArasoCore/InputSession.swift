@@ -671,15 +671,19 @@ public final class InputSession {
     /// shortcut reaches the text service as a key and `.other` puts the word in first, so there
     /// is nothing to fix and a Ctrl let go on its own (AltGr sends a virtual left Ctrl) would only
     /// split the word. As after any shortcut, what comes next isn't known (the paste never
-    /// reaches the input method either), so the run is read again from the field.
-    public func commandPressed(client: TextClient, heldWordOnly: Bool) {
-        if heldWordOnly, heldBoundary == nil { return }
-        guard !keys.isEmpty || conversion != nil else { return }
+    /// reaches the input method either), so the run is read again from the field. Returns whether
+    /// a word went in: the caller redraws the strip only then, or a ⌘ that changed nothing would
+    /// start the learned capsule over.
+    @discardableResult
+    public func commandPressed(client: TextClient, heldWordOnly: Bool) -> Bool {
+        if heldWordOnly, heldBoundary == nil { return false }
+        guard !keys.isEmpty || conversion != nil else { return false }
         readings = nil // as on any key: the strip is synced right after this
         learned = nil
         commit(client: client)
         previousLanguage = nil
         resetRun()
+        return true
     }
 
     /// Commits whatever is in progress as-is (focus change, shortcut, deactivation).

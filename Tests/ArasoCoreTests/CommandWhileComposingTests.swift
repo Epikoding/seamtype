@@ -59,6 +59,15 @@ import Testing
         #expect(field.text != "안녕 ")
     }
 
+    /// The caller redraws the strip only when ⌘ put a word in: a ⌘ that changed nothing says so,
+    /// or the capsule saying a word was learned would start over on every ⌘S.
+    @Test func commandSaysWhetherItPutAWordIn() {
+        #expect(!session.commandPressed(client: field, heldWordOnly: false))
+        type("dkssud")
+        #expect(session.commandPressed(client: field, heldWordOnly: false))
+        #expect(!session.commandPressed(client: field, heldWordOnly: false))
+    }
+
     /// The price of committing on ⌘: pressed and let go mid-word, it ends the word there, and the
     /// next letters start a new word.
     @Test func commandMidWordEndsTheWordThere() {

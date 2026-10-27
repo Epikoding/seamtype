@@ -123,8 +123,9 @@ final class InputController: IMKInputController {
                 // and deletes on ⌘⌫ itself).
                 if event.keyCode == KeyCode.leftCommand || event.keyCode == KeyCode.rightCommand,
                    event.modifierFlags.contains(.command) {
-                    session.commandPressed(client: textClient(input), heldWordOnly: false)
-                    syncStrip(input) // a conversion's candidates went in with it: the strip goes too
+                    if session.commandPressed(client: textClient(input), heldWordOnly: false) {
+                        syncStrip(input) // a conversion's candidates went in with it: the strip goes too
+                    }
                 }
                 pauseTapChanged(event, client: input)
                 switchTapChanged(event, client: input)
