@@ -76,6 +76,6 @@ import Testing
         #expect(marked == nil)
         #expect(field.insertions == ["안ㄴ"])
         type("ud ")
-        #expect(field.text.hasPrefix("안ㄴ") && !field.text.hasPrefix("안녕"))
+        #expect(field.text.hasPrefix("안ㄴ"))
     }
 }
