@@ -358,8 +358,10 @@ public final class ServiceRuntime {
                            ui: inout UIState) -> Bool {
         if let modifier = KeyMapper.modifier(key) {
             // Ctrl going down: a held word goes in before the shortcut, since an app may act on it
-            // without showing it to the input method.
-            if modifier.isCommand { session.commandPressed(client: field) }
+            // without showing it to the input method. Only a held one: a shortcut such as Ctrl+V does
+            // reach the text service as a key (`.other` puts the word in first), so a word without a
+            // boundary keeps composing through a Ctrl let go on its own or AltGr's virtual left Ctrl.
+            if modifier.isCommand { session.commandPressed(client: field, heldWordOnly: true) }
             client.taps.down(modifier, held: KeyMapper.modifiers(key), pauseKey: settings.pauseKey,
                              switchKeys: session.policy.switchKeys)
             return false

@@ -120,7 +120,8 @@ the same code as on macOS; kanji conversion is AzooKey's.
 Where it differs from macOS:
 
 - Ctrl plays ⌘'s part: right Ctrl (the 한자 key) tapped alone pauses, and right Alt (the 한/영
-  key) tapped alone switches readings.
+  key) tapped alone switches readings. Ctrl going down puts in only a held word; a word being
+  typed keeps composing (a key such as Ctrl+V does reach Araso, and the word goes in then).
 - Apps are named by program (`notepad.exe`), and the settings files are in `%APPDATA%\Araso`.
 - Text replacements come from `replacements.json` in that folder (`{"addr": ["123 Main St"]}`),
   and Araso replaces them itself.

@@ -205,7 +205,7 @@ import Testing
     /// the input method the key, and would paste over the underlined word.
     @Test func commandGoingDownCommitsTheHeldWordSoAPasteLandsAfterIt() {
         type("dkssud ")
-        session.commandPressed(client: field)
+        session.commandPressed(client: field, heldWordOnly: false)
         #expect(field.text == "안녕 " && marked == nil)
         #expect(field.insertions == ["안녕 "])
         field.insertText("hello", replacing: nil) // the app's paste
@@ -215,7 +215,7 @@ import Testing
     @Test(arguments: [".", "!"])
     func commandGoingDownCommitsTheWordWithItsSymbol(symbol: String) {
         type("dkssud" + symbol)
-        session.commandPressed(client: field)
+        session.commandPressed(client: field, heldWordOnly: false)
         #expect(field.text == "안녕" + symbol && marked == nil)
     }
 
@@ -223,7 +223,7 @@ import Testing
     /// letters after a ⌘ let go mid-word start a new word.
     @Test func commandGoingDownCommitsAWordWithoutABoundaryToo() {
         type("dkssud")
-        session.commandPressed(client: field)
+        session.commandPressed(client: field, heldWordOnly: false)
         #expect(field.text == "안녕" && marked == nil)
         #expect(field.insertions == ["안녕"])
         type("gktpdy ")
@@ -234,7 +234,7 @@ import Testing
     /// from the field: a pasted URL makes the next segment typed English.
     @Test func aURLPastedAfterCommandCounts() {
         type("dkssud ")
-        session.commandPressed(client: field)
+        session.commandPressed(client: field, heldWordOnly: false)
         field.insertText("https://x.io/", replacing: nil) // the app's paste
         type("dl ")
         #expect(field.text == "안녕 https://x.io/dl ")
@@ -243,13 +243,13 @@ import Testing
     /// After ⌘ the word is in the app: a switch key no longer changes it.
     @Test func aSwitchKeyAfterCommandLeavesTheWordAsItWent() {
         type("dkssud ")
-        session.commandPressed(client: field)
+        session.commandPressed(client: field, heldWordOnly: false)
         session.handle(.cycle, client: field)
         #expect(field.text == "안녕 " && marked == nil)
     }
 
     @Test func commandGoingDownWithNothingTypedDoesNothing() {
-        session.commandPressed(client: field)
+        session.commandPressed(client: field, heldWordOnly: false)
         #expect(field.text == "" && field.insertions.isEmpty)
     }
 
