@@ -37,7 +37,7 @@ A word kept underlined together with its boundary, still treated as the word bei
 app set to hold words. Only a Space or a symbol is held, never a digit. A switch key changes the
 word and Delete takes back only the boundary. It goes in when the next word starts, on most other
 keys, and the moment ⌘ goes down (as every word being typed does, so a paste lands after it and
-⌘⌫ takes it rather than the word before).
+a delete on ⌘⌫ doesn't skip it).
 _Avoid_: pending word, suspended word
 
 **Switch key** (언어 바꾸기 키):

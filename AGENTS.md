@@ -154,8 +154,9 @@ tests use `FakeTextField`). It owns the preview and hysteresis, commits, Esc rea
 - ⌘ going down (`commandPressed`, from flagsChanged) commits the word being typed, in every app,
   with or without a boundary (a held word goes in with its boundary), and resets the run as a
   shortcut does: Ghostty acts on ⌘V and ⌘⌫ itself without showing the input method the key, so
-  the paste replaced the marked text and the word-delete took the word before it (the marked word
-  wasn't text to it yet). The cost is that a ⌘ let go mid-word starts a new word with the next
+  the paste replaced the underlined word and its ⌘⌫ (a line delete there) skipped that word for
+  the text before it (the underlined word wasn't text to it yet). With nothing being typed a ⌘
+  changes nothing. The cost is that a ⌘ let go mid-word starts a new word with the next
   letters (`CommandWhileComposingTests`). The strip is synced after it, since a conversion's
   candidates go in with the word. On Windows `ServiceRuntime` passes `heldWordOnly: true`: Ctrl+V
   does reach the text service as a key (`.other` commits first), so only a held word goes in, and

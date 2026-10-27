@@ -252,7 +252,7 @@ While a word is being typed it is underlined and shows the language Araso expect
 | `-` | commit, then `-` | ー |
 | Return | commit only (press again for a newline or to send; a setting) | commit as shown, kana or live-converted kanji (no newline) |
 | ⌃K / F7, ⌃J / F6 | (the app's shortcut) | katakana / hiragana (Space flips, Return commits) |
-| Tab, arrows, ⌘/⌃/⌥ | commit, the app gets the key (⌘ commits the moment it goes down, so ⌘V pastes after the word and ⌘⌫ deletes this word) | same |
+| Tab, arrows, ⌘/⌃/⌥ | commit, the app gets the key (⌘ commits the moment it goes down, so ⌘V pastes after the word and a delete on ⌘⌫ doesn't skip it) | same |
 | **Right ⌘** (tapped on its own; a setting) | [pause](#pause) / resume Araso in this text field | same |
 
 <details>
@@ -368,7 +368,7 @@ end the word but goes inside the underline too.
 - While underlined it is the word being typed: a language switch key changes it (`dkssud.` →
   `안녕.`, the mark stays as typed), and Delete deletes (the space or mark first).
 - Starting the next word puts it in with that character. So does pressing ⌘ (as it does for any
-  underlined word in any app), so a ⌘V pastes after the word and ⌘⌫ deletes it rather than the word
+  underlined word in any app), so a ⌘V pastes after the word and a ⌘⌫ doesn't skip it to delete the text
   before (a terminal acts on ⌘V and ⌘⌫ itself, without showing Araso the key); after that a switch
   key can't change the word any more.
 - Only one character is held: after `안녕.` a Space or a second mark ends the word and is handled as

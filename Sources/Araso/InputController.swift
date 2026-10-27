@@ -120,7 +120,7 @@ final class InputController: IMKInputController {
             MainActor.assumeIsolated {
                 // ⌘ going down: the word being typed goes in before the shortcut, since an app may
                 // act on the shortcut without showing it to the input method (Ghostty pastes on ⌘V
-                // and deletes a word on ⌘⌫ itself).
+                // and deletes on ⌘⌫ itself).
                 if event.keyCode == KeyCode.leftCommand || event.keyCode == KeyCode.rightCommand,
                    event.modifierFlags.contains(.command) {
                     session.commandPressed(client: textClient(input), heldWordOnly: false)

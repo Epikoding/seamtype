@@ -664,15 +664,19 @@ public final class InputSession {
     /// The ⌘ key went down (Ctrl on Windows). The word being typed goes in now, a held word with
     /// its boundary, before the shortcut: an app that acts on the shortcut itself never shows the
     /// input method the key (Ghostty's ⌘V and ⌘⌫ are its own keybindings), so it pasted over the
-    /// underlined word, and its word-delete took the word before it (the underlined one wasn't
-    /// text to it yet). The price is a ⌘ pressed and let go mid-word: the letters after it start
-    /// a new word. With `heldWordOnly` a word without a boundary keeps composing: on Windows the
+    /// underlined word, and its ⌘⌫ (a line delete there) skipped that word for the text before it
+    /// (the underlined word wasn't text to it yet). The price is a ⌘ pressed and let go mid-word:
+    /// the letters after it start a new word. With nothing being typed a ⌘ changes nothing, as
+    /// before: the flip window stays open for the switch key. With `heldWordOnly` a word without a boundary keeps composing: on Windows the
     /// shortcut reaches the text service as a key and `.other` puts the word in first, so there
     /// is nothing to fix and a Ctrl let go on its own (AltGr sends a virtual left Ctrl) would only
     /// split the word. As after any shortcut, what comes next isn't known (the paste never
     /// reaches the input method either), so the run is read again from the field.
     public func commandPressed(client: TextClient, heldWordOnly: Bool) {
         if heldWordOnly, heldBoundary == nil { return }
+        guard !keys.isEmpty || conversion != nil else { return }
+        readings = nil // as on any key: the strip is synced right after this
+        learned = nil
         commit(client: client)
         previousLanguage = nil
         resetRun()

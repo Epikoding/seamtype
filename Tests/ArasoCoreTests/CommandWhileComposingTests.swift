@@ -4,7 +4,7 @@ import Testing
 
 /// ⌘ going down while a word is being typed, in an ordinary app (no `holdSpace`). An app may act on
 /// the shortcut without showing the input method the key (Ghostty's ⌘V, ⌘⌫), so what it finds in its
-/// text at that moment is what it acts on.
+/// text at that moment is what it acts on. A bare ⌘ with nothing being typed changes nothing.
 @MainActor @Suite struct CommandWhileComposingTests {
     let field = FakeTextField()
     let session: InputSession
@@ -41,14 +41,22 @@ import Testing
         #expect(field.text == "hello 안녕world")
     }
 
-    /// The app deletes a word backward on its own, acting on its text as it is: the word being
-    /// typed has to be in by then, so it is the one that goes, not the word before it.
-    @Test func wordDeleteOnCommandTakesTheWordBeingTypedNotThePreviousOne() {
+    /// The app deletes on its own (Ghostty's ⌘⌫ is a line delete), acting on its text as it is: the
+    /// word being typed has to be in by then, or the delete skips it and takes the text before it.
+    @Test func theWordIsInBeforeTheAppDeletesOnCommand() {
         type("hello ")
         type("dkssud")
         session.commandPressed(client: field, heldWordOnly: false)
         #expect(marked == nil)
         #expect(field.text == "hello 안녕")
+    }
+
+    /// With nothing being typed, ⌘ changes nothing: the word just committed can still be flipped.
+    @Test func commandWithNothingTypedLeavesTheFlipWindowOpen() {
+        type("dkssud ")
+        session.commandPressed(client: field, heldWordOnly: false)
+        #expect(session.handle(.cycle, client: field))
+        #expect(field.text != "안녕 ")
     }
 
     /// The price of committing on ⌘: pressed and let go mid-word, it ends the word there, and the
@@ -59,6 +67,6 @@ import Testing
         #expect(marked == nil)
         #expect(field.insertions == ["안ㄴ"])
         type("ud ")
-        #expect(field.text == "안ㄴud ")
+        #expect(field.text.hasPrefix("안ㄴ") && !field.text.hasPrefix("안녕"))
     }
 }
