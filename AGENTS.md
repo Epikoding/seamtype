@@ -158,9 +158,10 @@ tests use `FakeTextField`). It owns the preview and hysteresis, commits, Esc rea
   the text before it (the underlined word wasn't text to it yet). With nothing being typed a ⌘
   changes nothing. The cost is that a ⌘ let go mid-word starts a new word with the next
   letters (`CommandWhileComposingTests`). The strip is synced after it, since a conversion's
-  candidates go in with the word. On Windows `ServiceRuntime` passes `heldWordOnly: true`: Ctrl+V
-  does reach the text service as a key (`.other` commits first), so only a held word goes in, and
-  a Ctrl let go on its own or AltGr's virtual left Ctrl doesn't split the word. A Hyper key
+  candidates go in with the word. On Windows and Linux `ServiceRuntime` passes `heldWordOnly:
+  true`: Ctrl+V does reach the text service (or the fcitx5 addon) as a key (`.other` commits
+  first), so only a held word goes in, and a Ctrl let go on its own or AltGr's virtual left Ctrl
+  doesn't split the word. A Hyper key
   (⌃⌥⇧⌘ at once), which the switch and pause taps ignore, counts as ⌘ here.
 
 **Windows** (docs/windows-port.md): `ArasoService` (Swift, portable, tested on macOS too) is

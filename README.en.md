@@ -160,7 +160,9 @@ and distributions like it (glibc 2.35 or later).
 Where it differs from macOS:
 
 - Ctrl plays ⌘'s part: right Ctrl (the 한자 key) tapped alone pauses, and right Alt (the 한/영
-  key) tapped alone switches readings. fcitx5 turns input methods on and off with 한/영, but in a
+  key) tapped alone switches readings. Ctrl going down puts in only a held word; a word being
+  typed keeps composing (a key such as Ctrl+V does reach Araso, and the word goes in then).
+  fcitx5 turns input methods on and off with 한/영, but in a
   field Araso types in, Araso takes it first as its switch key.
 - Araso starts on in every text field: the first time it starts, it turns on fcitx5's Active By
   Default. Off (**On in every text field** under Languages in the settings window), a field starts
